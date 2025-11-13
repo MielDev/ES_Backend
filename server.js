@@ -1,0 +1,67 @@
+require('dotenv').config();
+const express = require('express');
+const cors = require('cors');
+const path = require('path');
+const { sequelize } = require('./models');
+
+const app = express();
+// Configuration CORS pour accepter les requêtes avec des identifiants
+const corsOptions = {
+    origin: 'http://localhost:4200', // Remplacez par l'URL de votre frontend
+    credentials: true,
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+    exposedHeaders: ['Content-Range', 'X-Content-Range']
+};
+app.use(cors(corsOptions));
+app.use(express.json());
+
+// Servir les fichiers uploads statiquement
+app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+
+// routes
+const authRoutes = require('./routes/auth.routes');
+const authStudentRoutes = require('./routes/auth.student.routes');
+const slotRoutes = require('./routes/slot.routes');
+const apptRoutes = require('./routes/appointment.routes');
+const adminRoutes = require('./routes/admin.routes');
+
+app.use('/api/auth', authRoutes);
+app.use('/api/auth/student', authStudentRoutes); // Routes étudiant sur un sous-chemin
+app.use('/api/slots', slotRoutes);
+app.use('/api/appointments', apptRoutes);
+app.use('/api/admin', adminRoutes);
+
+// Configuration de synchronisation sécurisée
+const syncDB = async () => {
+    try {
+        // Désactive la vérification des clés étrangères temporairement
+        await sequelize.query('SET FOREIGN_KEY_CHECKS = 0', { raw: true });
+        
+        // Synchronise les modèles avec des options sécurisées
+        await sequelize.sync({
+            alter: {
+                drop: false, // Ne supprime pas les colonnes ou tables
+            },
+            logging: console.log, // Affiche les requêtes SQL
+            benchmark: true
+        });
+        
+        // Réactive la vérification des clés étrangères
+        await sequelize.query('SET FOREIGN_KEY_CHECKS = 1', { raw: true });
+        
+        console.log('✅ Base de données synchronisée avec succès');
+    } catch (error) {
+        console.error('❌ Erreur lors de la synchronisation de la base de données:');
+        console.error(error);
+        process.exit(1); // Arrête le processus en cas d'erreur critique
+    }
+};
+
+// Démarrage du serveur
+const PORT = process.env.PORT || 3000;
+syncDB().then(() => {
+    app.listen(PORT, () => {
+        console.log(`🚀 Serveur démarré sur le port ${PORT}`);
+    });
+});
