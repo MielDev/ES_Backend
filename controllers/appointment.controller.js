@@ -142,7 +142,17 @@ exports.cancelAppointment = async (req, res) => {
         await appt.save();
 
         if (appt.intervalSlot) {
+            console.log('Places avant annulation:', appt.intervalSlot.places_restantes);
             await appt.intervalSlot.update({ places_restantes: appt.intervalSlot.places_restantes + 1 });
+            console.log('Places après annulation:', appt.intervalSlot.places_restantes + 1);
+        } else {
+            console.log('Aucun intervalSlot trouvé pour le rendez-vous');
+            // Solution alternative: mise à jour directe
+            await IntervalSlot.update(
+                { places_restantes: require('sequelize').literal('places_restantes + 1') },
+                { where: { id: appt.intervalSlotId } }
+            );
+            console.log('Mise à jour directe effectuée pour intervalSlotId:', appt.intervalSlotId);
         }
 
         res.json({ message: 'Annulé', appt });
