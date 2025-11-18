@@ -1,70 +1,16 @@
-const { Slot, AdminConfig } = require('../models');
+const { Slot, AdminConfig, IntervalSlot } = require('../models');
 
-exports.generateSlotsFromConfig = async (req, res) => {
-    try {
-        const configs = await AdminConfig.findAll({ where: { is_active: true } });
-        if (configs.length === 0) {
-            return res.status(400).json({ message: 'Aucune configuration active trouvée' });
-        }
-
-        const slotsCreated = [];
-        const today = new Date();
-
-        // Générer des slots pour les 4 prochaines semaines
-        for (let weekOffset = 0; weekOffset < 4; weekOffset++) {
-            configs.forEach(async (config) => {
-                const currentDate = new Date(today);
-                currentDate.setDate(today.getDate() + (weekOffset * 7));
-
-                // Trouver le jour de la semaine
-                const dayNames = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi'];
-                const currentDayName = dayNames[currentDate.getDay()];
-
-                if (currentDayName === config.jour_semaine) {
-                    // Créer des slots pour ce jour selon les heures configurées
-                    const [startHour, startMin] = config.heure_debut.split(':').map(Number);
-                    const [endHour, endMin] = config.heure_fin.split(':').map(Number);
-
-                    for (let hour = startHour; hour < endHour; hour++) {
-                        const slotDate = new Date(currentDate);
-                        slotDate.setHours(hour, 0, 0, 0);
-
-                        // Vérifier si le slot n'existe pas déjà
-                        const existingSlot = await Slot.findOne({
-                            where: {
-                                date: slotDate.toISOString().split('T')[0],
-                                heure: `${hour.toString().padStart(2, '0')}:00:00`
-                            }
-                        });
-
-                        if (!existingSlot) {
-                            const slot = await Slot.create({
-                                date: slotDate.toISOString().split('T')[0],
-                                heure: `${hour.toString().padStart(2, '0')}:00:00`,
-                                capacite_max: config.nombre_passages_max,
-                                places_restantes: config.nombre_passages_max
-                            });
-                            slotsCreated.push(slot);
-                        }
-                    }
-                }
-            });
-        }
-
-        res.json({
-            message: `${slotsCreated.length} créneaux générés`,
-            slots: slotsCreated
-        });
-    } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: 'Erreur génération créneaux' });
-    }
-};
-
+// Créer un créneau principal manuellement
 exports.createSlot = async (req, res) => {
     try {
-        const { date, heure, capacite_max } = req.body;
-        const slot = await Slot.create({ date, heure, capacite_max, places_restantes: capacite_max });
+        const { date, heure_debut, heure_fin, interval_minutes, capacite_par_interval } = req.body;
+        const slot = await Slot.create({
+            date,
+            heure_debut,
+            heure_fin,
+            interval_minutes: interval_minutes || 15,
+            capacite_par_interval: capacite_par_interval || 3
+        });
         res.status(201).json(slot);
     } catch (err) {
         console.error(err);
@@ -72,9 +18,82 @@ exports.createSlot = async (req, res) => {
     }
 };
 
+// Générer les créneaux détaillés depuis un slot principal
+exports.generateIntervalSlots = async (req, res) => {
+    try {
+        const { slotId } = req.params;
+        const slot = await Slot.findByPk(slotId);
+
+        if (!slot) {
+            return res.status(404).json({ message: 'Slot non trouvé' });
+        }
+
+        // Supprimer les anciens intervalles pour ce slot
+        await IntervalSlot.destroy({ where: { slot_parent_id: slotId } });
+
+        const intervalSlots = [];
+        const [startHour, startMin] = slot.heure_debut.split(':').map(Number);
+        const [endHour, endMin] = slot.heure_fin.split(':').map(Number);
+
+        const startTime = startHour * 60 + startMin;
+        const endTime = endHour * 60 + endMin;
+
+        // Générer et créer tous les intervalles
+        for (let currentTime = startTime; currentTime < endTime; currentTime += slot.interval_minutes) {
+            const hour = Math.floor(currentTime / 60);
+            const minute = currentTime % 60;
+
+            const heure_debut_interval = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}:00`;
+            const heure_fin_interval = `${hour.toString().padStart(2, '0')}:${(minute + slot.interval_minutes).toString().padStart(2, '0')}:00`;
+
+            const intervalSlot = await IntervalSlot.create({
+                date: slot.date,
+                heure_debut: heure_debut_interval,
+                heure_fin: heure_fin_interval,
+                capacite_max: slot.capacite_par_interval,
+                places_restantes: slot.capacite_par_interval,
+                slot_parent_id: slot.id
+            });
+
+            intervalSlots.push(intervalSlot);
+        }
+
+        res.json({
+            message: `${intervalSlots.length} créneaux générés`,
+            slots: intervalSlots
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Erreur génération créneaux' });
+    }
+};
+
 exports.getSlots = async (req, res) => {
-    const slots = await Slot.findAll({ order: [['date', 'ASC'], ['heure', 'ASC']] });
+    const slots = await Slot.findAll({ order: [['date', 'ASC'], ['heure_debut', 'ASC']] });
     res.json(slots);
+};
+
+// Lister les créneaux disponibles pour les étudiants
+exports.getIntervalSlots = async (req, res) => {
+    try {
+        const { date } = req.query;
+        const whereClause = { isActive: true };
+
+        if (date) {
+            whereClause.date = date;
+        }
+
+        const intervalSlots = await IntervalSlot.findAll({
+            where: whereClause,
+            include: [{ model: Slot, attributes: ['date', 'heure_debut', 'heure_fin'] }],
+            order: [['date', 'ASC'], ['heure_debut', 'ASC']]
+        });
+
+        res.json(intervalSlots);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Erreur récupération créneaux' });
+    }
 };
 
 exports.updateSlot = async (req, res) => {

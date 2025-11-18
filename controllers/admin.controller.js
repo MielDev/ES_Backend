@@ -6,7 +6,7 @@ const multer = require('multer');
 // Configuration des créneaux
 exports.getAdminConfig = async (req, res) => {
     try {
-        const config = await AdminConfig.findAll({ order: [['jour_semaine', 'ASC']] });
+        const config = await AdminConfig.findAll({ order: [['date_specifique', 'ASC']] });
         res.json(config);
     } catch (err) {
         console.error(err);
@@ -16,18 +16,17 @@ exports.getAdminConfig = async (req, res) => {
 
 exports.createOrUpdateConfig = async (req, res) => {
     try {
-        const { jour_semaine, heure_debut, heure_fin, nombre_passages_max, is_active } = req.body;
+        const { date_specifique, heure_debut, heure_fin, is_active } = req.body;
 
-        const existing = await AdminConfig.findOne({ where: { jour_semaine } });
+        const existing = await AdminConfig.findOne({ where: { date_specifique } });
         if (existing) {
-            await existing.update({ heure_debut, heure_fin, nombre_passages_max, is_active });
+            await existing.update({ heure_debut, heure_fin, is_active });
             return res.json(existing);
         } else {
             const config = await AdminConfig.create({
-                jour_semaine,
+                date_specifique,
                 heure_debut,
                 heure_fin,
-                nombre_passages_max,
                 is_active
             });
             return res.status(201).json(config);
@@ -40,8 +39,8 @@ exports.createOrUpdateConfig = async (req, res) => {
 
 exports.deleteConfig = async (req, res) => {
     try {
-        const { jour_semaine } = req.params;
-        const config = await AdminConfig.findOne({ where: { jour_semaine } });
+        const date_specifique = req.params.date_specifique;
+        const config = await AdminConfig.findOne({ where: { date_specifique } });
         if (!config) return res.status(404).json({ message: 'Configuration non trouvée' });
 
         await config.destroy();
@@ -97,7 +96,7 @@ const storage = multer.diskStorage({
     }
 });
 
-const upload = multer({ 
+const upload = multer({
     storage: storage,
     limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max
     fileFilter: (req, file, cb) => {
@@ -105,7 +104,7 @@ const upload = multer({
         const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
         const isImage = /jpeg|jpg|png|gif/.test(file.mimetype);
         const isPDF = file.mimetype === 'application/pdf';
-        
+
         if ((isImage || isPDF) && extname) {
             return cb(null, true);
         } else {
@@ -120,7 +119,7 @@ exports.uploadJustificatif = (req, res) => {
         if (err) {
             return res.status(400).json({ message: err.message });
         }
-        
+
         if (!req.file) {
             return res.status(400).json({ message: 'Aucun fichier téléchargé' });
         }
@@ -148,7 +147,7 @@ exports.uploadJustificatif = (req, res) => {
                 justificatif_commentaire: null
             });
 
-            res.json({ 
+            res.json({
                 message: 'Fichier téléchargé avec succès',
                 filePath: req.file.filename,
                 justificatif_url: `${req.protocol}://${req.get('host')}/uploads/${req.file.filename}`
@@ -198,19 +197,19 @@ exports.updateUser = async (req, res) => {
             specialite: specialite !== undefined ? specialite : user.specialite,
             justificatif_status: justificatif_status !== undefined ? justificatif_status : user.justificatif_status,
             justificatif_commentaire: justificatif_commentaire !== undefined ? justificatif_commentaire : user.justificatif_commentaire,
-           isActive: isActive !== undefined ? isActive : user.isActive,
+            isActive: isActive !== undefined ? isActive : user.isActive,
             isDeleted: isDeleted !== undefined ? isDeleted : user.isDeleted,
             passages_utilises: passages_utilises !== undefined ? parseInt(passages_utilises) : user.passages_utilises,
             passages_max_autorises: passages_max_autorises !== undefined ? parseInt(passages_max_autorises) : user.passages_max_autorises
         };
 
         await user.update(updatedFields);
-        
+
         // Retourner l'utilisateur mis à jour sans le mot de passe
         const updatedUser = await User.findByPk(id, {
             attributes: { exclude: ['password'] }
         });
-        
+
         res.json(updatedUser);
     } catch (err) {
         console.error(err);
@@ -418,7 +417,7 @@ exports.getStudentJustificatifInfo = async (req, res) => {
         const { id } = req.params;
         const user = await User.findByPk(id, {
             attributes: ['id', 'nom', 'prenom', 'email', 'telephone', 'ecole_universite', 'specialite',
-                       'justificatif_path', 'justificatif_status', 'justificatif_commentaire', 'date_inscription']
+                'justificatif_path', 'justificatif_status', 'justificatif_commentaire', 'date_inscription']
         });
 
         if (!user) return res.status(404).json({ message: 'Utilisateur non trouvé' });

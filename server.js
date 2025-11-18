@@ -37,7 +37,7 @@ const syncDB = async () => {
     try {
         // Désactive la vérification des clés étrangères temporairement
         await sequelize.query('SET FOREIGN_KEY_CHECKS = 0', { raw: true });
-        
+
         // Synchronise les modèles avec des options sécurisées
         await sequelize.sync({
             alter: {
@@ -46,10 +46,10 @@ const syncDB = async () => {
             logging: console.log, // Affiche les requêtes SQL
             benchmark: true
         });
-        
+
         // Réactive la vérification des clés étrangères
         await sequelize.query('SET FOREIGN_KEY_CHECKS = 1', { raw: true });
-        
+
         console.log('✅ Base de données synchronisée avec succès');
     } catch (error) {
         console.error('❌ Erreur lors de la synchronisation de la base de données:');

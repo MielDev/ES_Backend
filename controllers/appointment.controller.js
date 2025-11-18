@@ -1,9 +1,9 @@
-const { Appointment, Slot, User } = require('../models');
+const { User, Slot, IntervalSlot, Appointment } = require('../models');
 
 exports.bookAppointment = async (req, res) => {
     try {
         const userId = req.user.id;
-        const { slotId, note } = req.body;
+        const { intervalSlotId, note } = req.body;
 
         // Vérifier que l'utilisateur est actif
         const user = await User.findByPk(userId);
@@ -11,18 +11,26 @@ exports.bookAppointment = async (req, res) => {
             return res.status(403).json({ message: 'Votre compte est désactivé' });
         }
 
-        const slot = await Slot.findByPk(slotId);
-        if (!slot || !slot.isActive) return res.status(404).json({ message: 'Créneau indisponible' });
-        if (slot.places_restantes <= 0) return res.status(400).json({ message: 'Plus de places' });
+        const intervalSlot = await IntervalSlot.findByPk(intervalSlotId, {
+            include: [{ model: Slot, attributes: ['date', 'heure_debut', 'heure_fin'] }]
+        });
+
+        if (!intervalSlot || !intervalSlot.isActive) {
+            return res.status(404).json({ message: 'Créneau indisponible' });
+        }
+
+        if (intervalSlot.places_restantes <= 0) {
+            return res.status(400).json({ message: 'Plus de places' });
+        }
 
         // Vérifier si l'utilisateur a déjà un RDV dans la même semaine
         const userAppointments = await Appointment.findAll({
             where: { userId, status: 'confirmé' },
-            include: [Slot]
+            include: [{ model: IntervalSlot, include: [Slot] }]
         });
 
         // Calculer le début et la fin de la semaine du slot
-        const slotDate = new Date(slot.date);
+        const slotDate = new Date(intervalSlot.date);
         const startOfWeek = new Date(slotDate);
         startOfWeek.setDate(slotDate.getDate() - slotDate.getDay() + 1); // Lundi
         startOfWeek.setHours(0, 0, 0, 0);
@@ -33,7 +41,7 @@ exports.bookAppointment = async (req, res) => {
 
         // Vérifier si l'utilisateur a déjà un RDV confirmé dans cette semaine
         const hasConfirmedAppointmentThisWeek = userAppointments.some(appt => {
-            const apptDate = new Date(appt.slot.date);
+            const apptDate = new Date(appt.intervalSlot.date);
             return apptDate >= startOfWeek && apptDate <= endOfWeek;
         });
 
@@ -44,27 +52,28 @@ exports.bookAppointment = async (req, res) => {
             });
         }
 
-        // Vérifier si l'utilisateur a déjà un RDV sur ce slot
-        const existingAppointment = await Appointment.findOne({ where: { userId, slotId } });
+        // Vérifier si l'utilisateur a déjà un RDV sur ce créneau
+        const existingAppointment = await Appointment.findOne({
+            where: { userId, intervalSlotId }
+        });
+
         if (existingAppointment && existingAppointment.status === 'confirmé') {
             return res.status(400).json({ message: 'Vous avez déjà un rendez-vous confirmé sur ce créneau' });
         }
 
-        // Si l'utilisateur a annulé ce créneau, permettre de le reprendre (exception à la règle)
+        // Si l'utilisateur a annulé ce créneau, permettre de le reprendre
         if (existingAppointment && existingAppointment.status === 'annulé') {
-            // Vérifier que la place est toujours disponible (pas prise par quelqu'un d'autre)
-            if (slot.places_restantes <= 0) {
+            if (intervalSlot.places_restantes <= 0) {
                 return res.status(400).json({ message: 'Ce créneau n\'est plus disponible' });
             }
 
-            // Vérifier si l'utilisateur a déjà un RDV confirmé dans cette semaine (même en reprenant un annulé)
             const allConfirmedAppointments = await Appointment.findAll({
                 where: { userId, status: 'confirmé' },
-                include: [Slot]
+                include: [{ model: IntervalSlot, include: [Slot] }]
             });
 
             const hasAnyConfirmedAppointmentThisWeek = allConfirmedAppointments.some(appt => {
-                const apptDate = new Date(appt.slot.date);
+                const apptDate = new Date(appt.intervalSlot.date);
                 return apptDate >= startOfWeek && apptDate <= endOfWeek;
             });
 
@@ -75,13 +84,11 @@ exports.bookAppointment = async (req, res) => {
                 });
             }
 
-            // Reprendre le rendez-vous existant
             existingAppointment.status = 'confirmé';
             existingAppointment.note = note || existingAppointment.note;
             await existingAppointment.save();
 
-            // Remettre la place à occupée
-            await slot.update({ places_restantes: slot.places_restantes - 1 });
+            await intervalSlot.update({ places_restantes: intervalSlot.places_restantes - 1 });
 
             return res.json({
                 message: 'Rendez-vous repris avec succès',
@@ -96,8 +103,14 @@ exports.bookAppointment = async (req, res) => {
             });
         }
 
-        const appt = await Appointment.create({ userId, slotId });
-        await slot.update({ places_restantes: slot.places_restantes - 1 });
+        const appt = await Appointment.create({
+            userId,
+            intervalSlotId,
+            note: note || ''
+        });
+
+        await intervalSlot.update({ places_restantes: intervalSlot.places_restantes - 1 });
+
         res.status(201).json(appt);
     } catch (err) {
         console.error(err);
@@ -107,14 +120,19 @@ exports.bookAppointment = async (req, res) => {
 
 exports.getUserAppointments = async (req, res) => {
     const userId = req.user.id;
-    const appointments = await Appointment.findAll({ where: { userId }, include: [Slot], order: [['createdAt', 'DESC']] });
+    const appointments = await Appointment.findAll({
+        where: { userId },
+        include: [{ model: IntervalSlot, include: [Slot] }],
+        order: [['createdAt', 'DESC']]
+    });
     res.json(appointments);
 };
 
 exports.cancelAppointment = async (req, res) => {
     try {
         const id = req.params.id;
-        const appt = await Appointment.findByPk(id);
+        const appt = await Appointment.findByPk(id, { include: [IntervalSlot] });
+
         if (!appt) return res.status(404).json({ message: 'Rendez-vous non trouvé' });
 
         // Autorisation : seul propriétaire ou admin peut annuler
@@ -123,8 +141,9 @@ exports.cancelAppointment = async (req, res) => {
         appt.status = 'annulé';
         await appt.save();
 
-        const slot = await Slot.findByPk(appt.slotId);
-        if (slot) await slot.update({ places_restantes: slot.places_restantes + 1 });
+        if (appt.intervalSlot) {
+            await appt.intervalSlot.update({ places_restantes: appt.intervalSlot.places_restantes + 1 });
+        }
 
         res.json({ message: 'Annulé', appt });
     } catch (err) {
@@ -134,6 +153,9 @@ exports.cancelAppointment = async (req, res) => {
 
 exports.getAllAppointments = async (req, res) => {
     // admin
-    const appts = await Appointment.findAll({ include: [User, Slot], order: [['createdAt', 'DESC']] });
+    const appts = await Appointment.findAll({
+        include: [User, { model: IntervalSlot, include: [Slot] }],
+        order: [['createdAt', 'DESC']]
+    });
     res.json(appts);
 };

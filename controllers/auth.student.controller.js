@@ -144,7 +144,7 @@ exports.updateStudentProfile = async (req, res) => {
         if (email && email !== user.email) {
             const existingUser = await User.findOne({ where: { email } });
             if (existingUser) {
-                return res.status(400).json({ 
+                return res.status(400).json({
                     message: 'Cet email est déjà utilisé par un autre compte',
                     field: 'email'
                 });
@@ -158,13 +158,13 @@ exports.updateStudentProfile = async (req, res) => {
         if (telephone) user.telephone = telephone;
         if (ecole_universite) user.ecole_universite = ecole_universite;
         if (specialite) user.specialite = specialite;
-        
+
         // Gestion du téléchargement du nouveau justificatif
         if (req.file) {
             try {
                 // Supprimer l'ancien fichier s'il existe
                 if (user.justificatif_path) {
-                    const oldFilePath = path.join(__dirname, '../uploads/justificatifs', user.justificatif_path);
+                    const oldFilePath = path.join(__dirname, '../uploads', user.justificatif_path);
                     if (fs.existsSync(oldFilePath)) {
                         fs.unlinkSync(oldFilePath);
                     }
@@ -175,7 +175,7 @@ exports.updateStudentProfile = async (req, res) => {
                 user.justificatif_commentaire = null;
             } catch (fileError) {
                 console.error('Erreur lors de la gestion du fichier:', fileError);
-                return res.status(500).json({ 
+                return res.status(500).json({
                     message: 'Erreur lors du traitement du fichier',
                     error: process.env.NODE_ENV === 'development' ? fileError.message : undefined
                 });
@@ -205,7 +205,7 @@ exports.updateStudentProfile = async (req, res) => {
 
     } catch (error) {
         console.error('Erreur lors de la mise à jour du profil:', error);
-        res.status(500).json({ 
+        res.status(500).json({
             message: 'Erreur lors de la mise à jour du profil',
             error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
@@ -217,7 +217,7 @@ exports.downloadJustificatif = async (req, res) => {
     try {
         const userId = req.params.userId;
         const currentUser = req.user; // L'utilisateur connecté
-        
+
         // Vérifier si l'utilisateur est admin ou le propriétaire du compte
         if (currentUser.role !== 'admin' && currentUser.id.toString() !== userId) {
             return res.status(403).json({ message: 'Accès non autorisé' });
@@ -228,7 +228,7 @@ exports.downloadJustificatif = async (req, res) => {
             return res.status(404).json({ message: 'Justificatif non trouvé' });
         }
 
-        const filePath = path.join(__dirname, '../uploads/justificatifs', user.justificatif_path);
+        const filePath = path.join(__dirname, '../uploads', user.justificatif_path);
 
         // Vérifier que le fichier existe
         if (!fs.existsSync(filePath)) {

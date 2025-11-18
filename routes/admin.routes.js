@@ -6,7 +6,7 @@ const { auth, isAdmin } = require('../middleware/auth.middleware');
 // Configuration des créneaux
 router.get('/config', auth, isAdmin, adminCtrl.getAdminConfig);
 router.post('/config', auth, isAdmin, adminCtrl.createOrUpdateConfig);
-router.delete('/config/:jour_semaine', auth, isAdmin, adminCtrl.deleteConfig);
+router.delete('/config/:date_specifique', auth, isAdmin, adminCtrl.deleteConfig);
 
 // Gestion des utilisateurs
 router.get('/users', auth, isAdmin, adminCtrl.getAllUsers);
