@@ -433,3 +433,32 @@ exports.getStudentJustificatifInfo = async (req, res) => {
         res.status(500).json({ message: 'Erreur récupération infos justificatif' });
     }
 };
+
+// Récupérer les rendez-vous non validés
+exports.getUnvalidatedAppointments = async (req, res) => {
+    try {
+        const { Op } = require('sequelize');
+        const appointments = await Appointment.findAll({
+            where: { is_validated: false },
+            include: [
+                {
+                    model: User,
+                    attributes: { exclude: ['password'] },
+                    where: { is_active: true } // Seulement les utilisateurs actifs
+                },
+                {
+                    model: Slot,
+                    where: {
+                        date: { [Op.lt]: new Date() } // Seulement les créneaux passés
+                    }
+                }
+            ],
+            order: [['createdAt', 'DESC']]
+        });
+
+        res.json(appointments);
+    } catch (err) {
+        console.error('Erreur lors de la récupération des rendez-vous non validés :', err);
+        res.status(500).json({ message: 'Erreur lors de la récupération des rendez-vous non validés' });
+    }
+};

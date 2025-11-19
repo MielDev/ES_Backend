@@ -113,8 +113,13 @@ exports.deleteSlot = async (req, res) => {
         const id = req.params.id;
         const slot = await Slot.findByPk(id);
         if (!slot) return res.status(404).json({ message: 'Slot non trouvé' });
+
+        // Supprimer d'abord les intervalles générés associés
+        await IntervalSlot.destroy({ where: { slot_parent_id: id } });
+
+        // Puis supprimer le slot principal
         await slot.destroy();
-        res.json({ message: 'Supprimé' });
+        res.json({ message: 'Supprimé avec ses intervalles associés' });
     } catch (err) {
         res.status(500).json({ message: 'Erreur suppression slot' });
     }
