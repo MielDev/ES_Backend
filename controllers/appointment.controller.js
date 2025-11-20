@@ -54,7 +54,11 @@ exports.bookAppointment = async (req, res) => {
 
         // Vérifier si l'utilisateur a déjà un RDV sur ce créneau
         const existingAppointment = await Appointment.findOne({
-            where: { userId, intervalSlotId }
+            where: {
+                userId,
+                intervalSlotId,
+                status: 'confirmé'
+            }
         });
 
         if (existingAppointment && existingAppointment.status === 'confirmé') {
@@ -86,9 +90,12 @@ exports.bookAppointment = async (req, res) => {
 
             existingAppointment.status = 'confirmé';
             existingAppointment.note = note || existingAppointment.note;
+            existingAppointment.date_rdv = intervalSlot.date;
+            existingAppointment.heure_debut = intervalSlot.heure_debut;
+            existingAppointment.heure_fin = intervalSlot.heure_fin;
             await existingAppointment.save();
 
-            await intervalSlot.update({ places_restantes: intervalSlot.places_restantes - 1 });
+            await intervalSlot.decrement('places_restantes');
 
             return res.json({
                 message: 'Rendez-vous repris avec succès',
@@ -103,15 +110,20 @@ exports.bookAppointment = async (req, res) => {
             });
         }
 
-        const appt = await Appointment.create({
+        // Créer un nouveau rendez-vous avec les horaires
+        const appointment = await Appointment.create({
             userId,
             intervalSlotId,
-            note: note || ''
+            date_rdv: intervalSlot.date,
+            heure_debut: intervalSlot.heure_debut,
+            heure_fin: intervalSlot.heure_fin,
+            note,
+            status: 'confirmé'
         });
 
         await intervalSlot.update({ places_restantes: intervalSlot.places_restantes - 1 });
 
-        res.status(201).json(appt);
+        res.status(201).json(appointment);
     } catch (err) {
         console.error(err);
         res.status(500).json({ message: 'Erreur réservation' });
