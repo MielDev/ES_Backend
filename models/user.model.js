@@ -82,6 +82,21 @@ const User = sequelize.define('User', {
         type: DataTypes.DATE,
         defaultValue: DataTypes.NOW,
         index: true // Utile pour le tri par date d'inscription
+    },
+    date_naissance: {
+        type: DataTypes.DATEONLY,
+        allowNull: true,
+        index: false
+    },
+    nationalite: {
+        type: DataTypes.STRING,
+        allowNull: true,
+        index: false
+    },
+    paiement: {
+        type: DataTypes.BOOLEAN,
+        defaultValue: false,
+        index: true
     }
 }, {
     timestamps: true,

@@ -103,12 +103,15 @@ exports.bookAppointment = async (req, res) => {
             });
         }
 
-        // Vérifier la limite de passages de l'utilisateur
+        // Vérifier et mettre à jour la limite de passages de l'utilisateur
         if (user.passages_utilises >= user.passages_max_autorises) {
             return res.status(400).json({
                 message: `Vous avez atteint votre limite de ${user.passages_max_autorises} passages`
             });
         }
+        
+        // Décrémenter le nombre de passages restants
+        await user.increment('passages_utilises');
 
         // Créer un nouveau rendez-vous avec les horaires
         const appointment = await Appointment.create({
@@ -150,8 +153,23 @@ exports.cancelAppointment = async (req, res) => {
         // Autorisation : seul propriétaire ou admin peut annuler
         if (req.user.role !== 'admin' && req.user.id !== appt.userId) return res.status(403).json({ message: 'Accès refusé' });
 
+        // Vérifier d'abord si le rendez-vous était confirmé avant de le marquer comme annulé
+        const wasConfirmed = appt.status === 'confirmé';
+        
+        // Mettre à jour le statut
         appt.status = 'annulé';
         await appt.save();
+
+        // Incrémenter le nombre de passages restants si le rendez-vous était confirmé
+        if (wasConfirmed) {
+            const user = await User.findByPk(appt.userId);
+            if (user) {
+                await user.decrement('passages_utilises');
+                if (user.passages_utilises < 0) {
+                    await user.update({ passages_utilises: 0 });
+                }
+            }
+        }
 
         if (appt.intervalSlot) {
             console.log('Places avant annulation:', appt.intervalSlot.places_restantes);

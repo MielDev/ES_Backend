@@ -14,7 +14,10 @@ exports.registerStudent = async (req, res) => {
             password,
             telephone,
             ecole_universite,
-            specialite
+            specialite,
+            date_naissance,    // <-- conservé
+            nationalite        // <-- conservé
+            // paiement retiré
         } = req.body;
 
         // Validation des champs obligatoires
@@ -23,6 +26,10 @@ exports.registerStudent = async (req, res) => {
                 message: 'Les champs nom, prénom, email et mot de passe sont obligatoires'
             });
         }
+
+        // (Optionnel) valider date_naissance et nationalite si vous voulez les rendre obligatoires
+        // Exemple: si vous souhaitez les rendre obligatoires, décommentez la ligne suivante
+        // if (!date_naissance || !nationalite) return res.status(400).json({ message: 'Date de naissance et nationalité obligatoires' });
 
         // Vérifier si l'email existe déjà
         const existingUser = await User.findOne({ where: { email } });
@@ -40,7 +47,15 @@ exports.registerStudent = async (req, res) => {
         // Hasher le mot de passe
         const hashedPassword = await bcrypt.hash(password, 10);
 
-        // Créer l'utilisateur
+        // Préparer date_naissance en tant que Date si fournie
+        let parsedDateNaissance = null;
+        if (date_naissance) {
+            const d = new Date(date_naissance);
+            if (!isNaN(d)) parsedDateNaissance = d;
+            // else on peut ignorer ou renvoyer une erreur selon le besoin
+        }
+
+        // Créer l'utilisateur (ne plus inclure paiement)
         const user = await User.create({
             nom,
             prenom,
@@ -49,6 +64,9 @@ exports.registerStudent = async (req, res) => {
             telephone,
             ecole_universite,
             specialite,
+            date_naissance: parsedDateNaissance,
+            nationalite,
+            // paiement non défini ici : la colonne DB reste avec sa valeur par défaut (false)
             justificatif_path: req.file.filename,
             justificatif_status: 'en_attente',
             date_inscription: new Date()
@@ -71,6 +89,9 @@ exports.registerStudent = async (req, res) => {
                 telephone: user.telephone,
                 ecole_universite: user.ecole_universite,
                 specialite: user.specialite,
+                date_naissance: user.date_naissance,
+                nationalite: user.nationalite,
+                // paiement retiré de la réponse
                 justificatif_status: user.justificatif_status,
                 date_inscription: user.date_inscription
             },
@@ -108,6 +129,9 @@ exports.getStudentProfile = async (req, res) => {
                 telephone: user.telephone,
                 ecole_universite: user.ecole_universite,
                 specialite: user.specialite,
+                date_naissance: user.date_naissance,
+                nationalite: user.nationalite,
+                // paiement retiré de la réponse du profil
                 justificatif_path: user.justificatif_path,
                 justificatif_status: user.justificatif_status,
                 justificatif_commentaire: user.justificatif_commentaire,
@@ -128,7 +152,7 @@ exports.getStudentProfile = async (req, res) => {
 // Mettre à jour le profil étudiant
 exports.updateStudentProfile = async (req, res) => {
     try {
-        const { nom, prenom, email, telephone, ecole_universite, specialite } = req.body;
+        const { nom, prenom, email, telephone, ecole_universite, specialite, date_naissance, nationalite } = req.body;
         const userId = req.user.id;
 
         console.log('Requête reçue avec body:', req.body);
@@ -159,6 +183,18 @@ exports.updateStudentProfile = async (req, res) => {
         if (ecole_universite) user.ecole_universite = ecole_universite;
         if (specialite) user.specialite = specialite;
 
+        // Mettre à jour les nouveaux champs (sauf paiement)
+        if (nationalite) user.nationalite = nationalite;
+
+        if (date_naissance) {
+            const d = new Date(date_naissance);
+            if (!isNaN(d)) {
+                user.date_naissance = d;
+            } else {
+                return res.status(400).json({ message: 'Format de date_naissance invalide' });
+            }
+        }
+
         // Gestion du téléchargement du nouveau justificatif
         if (req.file) {
             try {
@@ -184,7 +220,7 @@ exports.updateStudentProfile = async (req, res) => {
 
         await user.save();
 
-        // Construire la réponse
+        // Construire la réponse (sans paiement)
         const userResponse = {
             id: user.id,
             nom: user.nom,
@@ -193,6 +229,9 @@ exports.updateStudentProfile = async (req, res) => {
             telephone: user.telephone,
             ecole_universite: user.ecole_universite,
             specialite: user.specialite,
+            date_naissance: user.date_naissance,
+            nationalite: user.nationalite,
+            // paiement retiré
             justificatif_path: user.justificatif_path,
             justificatif_status: user.justificatif_status,
             date_inscription: user.date_inscription
