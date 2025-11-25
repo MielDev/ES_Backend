@@ -438,8 +438,23 @@ exports.getStudentJustificatifInfo = async (req, res) => {
 exports.getUnvalidatedAppointments = async (req, res) => {
     try {
         const { Op } = require('sequelize');
+        const now = new Date();
+        const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
+
+        // D'abord, marquer les rendez-vous manqués
+        await require('../services/appointmentService').updateMissedAppointments();
+
+        // Puis récupérer les rendez-vous non validés (sauf ceux marqués comme manqués)
         const appointments = await Appointment.findAll({
-            where: { is_validated: false },
+            where: {
+                status: {
+                    [Op.notIn]: ['annulé', 'terminé', 'refusé_admin', 'manqué']
+                },
+                [Op.or]: [
+                    { valide_par_admin: false },
+                    { valide_par_admin: null }
+                ]
+            },
             include: [
                 {
                     model: User,
@@ -449,11 +464,14 @@ exports.getUnvalidatedAppointments = async (req, res) => {
                 {
                     model: Slot,
                     where: {
-                        date: { [Op.lt]: new Date() } // Seulement les créneaux passés
+                        date: { [Op.lte]: now } // Seulement les créneaux passés ou actuels
                     }
                 }
             ],
-            order: [['createdAt', 'DESC']]
+            order: [
+                ['date_rdv', 'ASC'],
+                ['heure_debut', 'ASC']
+            ]
         });
 
         res.json(appointments);

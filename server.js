@@ -19,6 +19,9 @@ app.use(express.json());
 // Servir les fichiers uploads statiquement
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
+// Import des services
+const { startMissedAppointmentsCheck } = require('./services/appointmentService');
+
 // routes
 const authRoutes = require('./routes/auth.routes');
 const authStudentRoutes = require('./routes/auth.student.routes');
@@ -61,6 +64,9 @@ const syncDB = async () => {
 // Démarrage du serveur
 const PORT = process.env.PORT || 3000;
 syncDB().then(() => {
+    // Démarrer la vérification périodique des rendez-vous manqués
+    startMissedAppointmentsCheck();
+
     app.listen(PORT, () => {
         console.log(`🚀 Serveur démarré sur le port ${PORT}`);
     });

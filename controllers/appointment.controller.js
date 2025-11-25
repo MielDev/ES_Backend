@@ -174,10 +174,56 @@ exports.cancelAppointment = async (req, res) => {
 };
 
 exports.getAllAppointments = async (req, res) => {
-    // admin
-    const appts = await Appointment.findAll({
+    const appointments = await Appointment.findAll({
         include: [User, { model: IntervalSlot, include: [Slot] }],
-        order: [['createdAt', 'DESC']]
+        order: [[{ model: IntervalSlot, as: 'IntervalSlot', include: [Slot] }, Slot, 'date', 'DESC']]
     });
-    res.json(appts);
+    res.json(appointments);
+};
+
+// Récupérer les rendez-vous manqués
+exports.getMissedAppointments = async (req, res) => {
+    try {
+        const { Op } = require('sequelize');
+
+        const appointments = await Appointment.findAll({
+            where: {
+                status: 'manqué'
+            },
+            include: [
+                {
+                    model: User,
+                    attributes: { exclude: ['password'] }
+                },
+                {
+                    model: IntervalSlot,
+                    include: [Slot],
+                    where: {
+                        date: {
+                            [Op.gte]: new Date(new Date().setDate(new Date().getDate() - 30)) // 30 derniers jours
+                        }
+                    },
+                    required: true
+                }
+            ],
+            order: [
+                [
+                    { model: IntervalSlot, as: 'IntervalSlot', include: [Slot] },
+                    Slot,
+                    'date',
+                    'DESC'
+                ],
+                [
+                    { model: IntervalSlot, as: 'IntervalSlot' },
+                    'heure_debut',
+                    'ASC'
+                ]
+            ]
+        });
+
+        res.json(appointments);
+    } catch (error) {
+        console.error('Erreur lors de la récupération des rendez-vous manqués:', error);
+        res.status(500).json({ message: 'Erreur lors de la récupération des rendez-vous manqués' });
+    }
 };

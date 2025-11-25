@@ -4,11 +4,11 @@ const sequelize = require('../config/db');
 const Appointment = sequelize.define('Appointment', {
     id: { type: DataTypes.INTEGER, autoIncrement: true, primaryKey: true },
     status: {
-        type: DataTypes.ENUM('confirmé', 'annulé', 'terminé', 'validé_admin', 'refusé_admin'),
+        type: DataTypes.ENUM('confirmé', 'annulé', 'terminé', 'validé_admin', 'refusé_admin', 'manqué'),
         defaultValue: 'confirmé'
     },
-    date_rdv: { 
-        type: DataTypes.DATEONLY, 
+    date_rdv: {
+        type: DataTypes.DATEONLY,
         allowNull: true // Temporairement nullable pour la migration
     },
     heure_debut: { type: DataTypes.TIME, allowNull: false },
