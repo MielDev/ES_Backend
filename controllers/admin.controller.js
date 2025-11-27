@@ -180,6 +180,9 @@ exports.updateUser = async (req, res) => {
             passages_max_autorises,
             isActive,
             isDeleted,
+            date_naissance,
+            nationalite,
+            paiement
         } = req.body;
 
         const user = await User.findByPk(id);
@@ -197,10 +200,13 @@ exports.updateUser = async (req, res) => {
             specialite: specialite !== undefined ? specialite : user.specialite,
             justificatif_status: justificatif_status !== undefined ? justificatif_status : user.justificatif_status,
             justificatif_commentaire: justificatif_commentaire !== undefined ? justificatif_commentaire : user.justificatif_commentaire,
+            passages_utilises: passages_utilises !== undefined ? passages_utilises : user.passages_utilises,
+            passages_max_autorises: passages_max_autorises !== undefined ? parseInt(passages_max_autorises) : user.passages_max_autorises,
+            date_naissance: date_naissance !== undefined ? date_naissance : user.date_naissance,
+            nationalite: nationalite !== undefined ? nationalite : user.nationalite,
+            paiement: paiement !== undefined ? paiement : user.paiement,
             isActive: isActive !== undefined ? isActive : user.isActive,
-            isDeleted: isDeleted !== undefined ? isDeleted : user.isDeleted,
-            passages_utilises: passages_utilises !== undefined ? parseInt(passages_utilises) : user.passages_utilises,
-            passages_max_autorises: passages_max_autorises !== undefined ? parseInt(passages_max_autorises) : user.passages_max_autorises
+            isDeleted: isDeleted !== undefined ? isDeleted : user.isDeleted
         };
 
         await user.update(updatedFields);
