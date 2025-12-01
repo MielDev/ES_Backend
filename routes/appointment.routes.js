@@ -8,5 +8,6 @@ router.get('/me', auth, apptCtrl.getUserAppointments);
 router.delete('/:id', auth, apptCtrl.cancelAppointment);
 router.get('/', auth, isAdmin, apptCtrl.getAllAppointments);
 router.get('/manques', auth, isAdmin, apptCtrl.getMissedAppointments);
+router.get('/mes-manques', auth, apptCtrl.getMyMissedAppointments);
 
 module.exports = router;

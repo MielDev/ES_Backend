@@ -19,4 +19,29 @@ const Appointment = sequelize.define('Appointment', {
     date_validation_admin: { type: DataTypes.DATE, allowNull: true }
 }, { timestamps: true });
 
+// Méthode pour récupérer les rendez-vous manqués d'un étudiant
+Appointment.getMissedAppointments = async function (userId) {
+    return await this.findAll({
+        where: {
+            UserId: userId,
+            status: 'manqué'
+        },
+        attributes: [
+            'id',
+            'date_rdv',
+            'heure_debut',
+            'heure_fin',
+            'note',
+            'note_admin',
+            'status',
+            'createdAt',
+            'updatedAt'
+        ],
+        order: [
+            ['date_rdv', 'DESC'],
+            ['heure_debut', 'DESC']
+        ]
+    });
+};
+
 module.exports = Appointment;

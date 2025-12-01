@@ -109,7 +109,7 @@ exports.bookAppointment = async (req, res) => {
                 message: `Vous avez atteint votre limite de ${user.passages_max_autorises} passages`
             });
         }
-        
+
         // Décrémenter le nombre de passages restants
         await user.increment('passages_utilises');
 
@@ -155,7 +155,7 @@ exports.cancelAppointment = async (req, res) => {
 
         // Vérifier d'abord si le rendez-vous était confirmé avant de le marquer comme annulé
         const wasConfirmed = appt.status === 'confirmé';
-        
+
         // Mettre à jour le statut
         appt.status = 'annulé';
         await appt.save();
@@ -243,5 +243,45 @@ exports.getMissedAppointments = async (req, res) => {
     } catch (error) {
         console.error('Erreur lors de la récupération des rendez-vous manqués:', error);
         res.status(500).json({ message: 'Erreur lors de la récupération des rendez-vous manqués' });
+    }
+};
+
+// Récupérer les rendez-vous manqués de l'utilisateur connecté
+exports.getMyMissedAppointments = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { Op } = require('sequelize');
+
+        const appointments = await Appointment.findAll({
+            where: {
+                userId,
+                status: 'manqué'
+            },
+            include: [
+                {
+                    model: IntervalSlot,
+                    include: [Slot],
+                    required: true
+                }
+            ],
+            order: [
+                [
+                    { model: IntervalSlot, as: 'IntervalSlot', include: [Slot] },
+                    Slot,
+                    'date',
+                    'DESC'
+                ],
+                [
+                    { model: IntervalSlot, as: 'IntervalSlot' },
+                    'heure_debut',
+                    'ASC'
+                ]
+            ]
+        });
+
+        res.json(appointments);
+    } catch (error) {
+        console.error('Erreur lors de la récupération de vos rendez-vous manqués:', error);
+        res.status(500).json({ message: 'Erreur lors de la récupération de vos rendez-vous manqués' });
     }
 };
