@@ -28,12 +28,34 @@ const authStudentRoutes = require('./routes/auth.student.routes');
 const slotRoutes = require('./routes/slot.routes');
 const apptRoutes = require('./routes/appointment.routes');
 const adminRoutes = require('./routes/admin.routes');
+const paymentRoutes = require('./routes/payment.routes');
 
+// Routes API
 app.use('/api/auth', authRoutes);
 app.use('/api/auth/student', authStudentRoutes); // Routes étudiant sur un sous-chemin
 app.use('/api/slots', slotRoutes);
 app.use('/api/appointments', apptRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api/payments', paymentRoutes); // Routes de paiement
+
+// Gestion des erreurs globales
+app.use((err, req, res, next) => {
+    console.error(err.stack);
+    res.status(500).json({
+        success: false,
+        message: 'Une erreur est survenue sur le serveur',
+        error: process.env.NODE_ENV === 'development' ? err.message : {}
+    });
+});
+
+// Gestion des routes non trouvées
+app.use((req, res) => {
+    res.status(404).json({
+        success: false,
+        message: 'Route non trouvée',
+        path: req.originalUrl
+    });
+});
 
 // Configuration de synchronisation sécurisée
 const syncDB = async () => {
