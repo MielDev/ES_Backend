@@ -7,7 +7,7 @@ const axios = require('axios');
 // Créer une intention de paiement
 const createPaymentIntent = async (req, res) => {
     console.log('Requête reçue pour créer une intention de paiement:', req.body);
-    
+
     try {
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
@@ -16,14 +16,14 @@ const createPaymentIntent = async (req, res) => {
         }
 
         const { amount, description, userId } = req.body;
-        
+
         console.log('Tentative de création de paiement pour l\'utilisateur:', userId, 'Montant:', amount);
-        
+
         // Vérifier si l'utilisateur existe
         const user = await User.findByPk(userId);
         if (!user) {
             console.error('Utilisateur non trouvé avec l\'ID:', userId);
-            return res.status(404).json({ 
+            return res.status(404).json({
                 success: false,
                 message: 'Utilisateur non trouvé',
                 error: { userId }
@@ -45,7 +45,7 @@ const createPaymentIntent = async (req, res) => {
             console.error('- Statut de l\'erreur:', error.response?.status);
             console.error('- Données de l\'erreur:', error.response?.data);
             console.error('- Message d\'erreur:', error.message);
-            
+
             // Mettre à jour le statut de la transaction en échec
             if (transaction) {
                 try {
@@ -67,10 +67,10 @@ const createPaymentIntent = async (req, res) => {
         }
 
         // Construction des URLs de retour
-        const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:4200').replace(/\/$/, '');
-        const returnUrl = `${frontendUrl}/payment/return?transactionId=${transaction.id}`;
-        const cancelUrl = `${frontendUrl}/payment/cancel?transactionId=${transaction.id}`;
-        
+        const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:4200').replace(/(\/)+$/, '');
+        const returnUrl = new URL(`/payment/return?transactionId=${transaction.id}`, frontendUrl).toString();
+        const cancelUrl = new URL(`/payment/cancel?transactionId=${transaction.id}`, frontendUrl).toString();
+
         console.log('URLs de retour configurées:');
         console.log('- URL de retour:', returnUrl);
         console.log('- URL d\'annulation:', cancelUrl);
@@ -78,7 +78,7 @@ const createPaymentIntent = async (req, res) => {
         // Configuration de l'appel à l'API SumUp
         const paymentData = {
             checkout_reference: `PAYMENT_${Date.now()}_${transaction.id}`,
-            amount: (parseFloat(amount) * 100).toFixed(0), // Convertir en centimes
+            amount: parseFloat(amount).toFixed(0), // Le montant est déjà en centimes
             currency: sumupConfig.defaultCurrency,
             merchant_code: sumupConfig.merchantCode,
             description: description || sumupConfig.defaultDescription,
@@ -105,7 +105,7 @@ const createPaymentIntent = async (req, res) => {
         console.log('- URL:', `${sumupConfig.apiUrl}/v0.1/checkouts`);
         console.log('- Clé API:', sumupConfig.apiKey ? 'PRÉSENTE' : 'MANQUANTE');
         console.log('Données du paiement:', JSON.stringify(paymentData, null, 2));
-        
+
         try {
             if (!sumupConfig.apiKey) {
                 throw new Error('Clé API SumUp non configurée');
@@ -137,49 +137,6 @@ const createPaymentIntent = async (req, res) => {
             transaction.status = 'pending';
             await transaction.save();
 
-            // Vérifier si l'URL de redirection est disponible
-            const checkoutUrl = response.data.redirect_url || `https://checkout.sumup.com/pay/${response.data.id}`;
-            
-            // Vérifier si l'ID de checkout est valide
-            if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(response.data.id)) {
-                throw new Error(`ID de checkout SumUp invalide: ${response.data.id}`);
-            }
-
-            // Réponse au client
-            const paymentResponse = {
-                id: transaction.id,
-                amount: transaction.amount,
-                currency: 'EUR',
-                status: 'PENDING',
-                // URL du checkout SumUp
-                payment_url: checkoutUrl,
-                // URL de retour personnalisée (sera utilisée après le paiement)
-                return_url: `${process.env.FRONTEND_URL || 'http://localhost:4200'}/payment/return?transactionId=${transaction.id}`,
-                checkout_id: response.data.id,
-                checkout_reference: response.data.id,
-                // Ajout des métadonnées pour le débogage
-                _debug: {
-                    sumup_checkout_id: response.data.id,
-                    timestamp: new Date().toISOString(),
-                    environment: process.env.NODE_ENV || 'development'
-                }
-            };
-            
-            console.log('Détails de la réponse SumUp:', {
-                response_data: response.data,
-                payment_url: checkoutUrl,
-                merchant_code: sumupConfig.merchantCode,
-                environment: process.env.NODE_ENV
-            });
-            
-            console.log('URL de paiement générée:', paymentResponse.payment_url);
-
-            console.log('Envoi de la réponse au client:', JSON.stringify(paymentResponse, null, 2));
-
-            return res.status(201).json({
-                success: true,
-                paymentData: paymentResponse // Changement de 'data' à 'paymentData' pour correspondre aux attentes du frontend
-            });
 
         } catch (error) {
             console.error('Erreur lors de l\'appel à l\'API SumUp:', {
@@ -187,7 +144,7 @@ const createPaymentIntent = async (req, res) => {
                 response: error.response?.data,
                 stack: error.stack
             });
-            
+
             // Marquer la transaction comme échouée
             transaction.status = 'failed';
             transaction.error = error.response?.data?.message || error.message;
@@ -201,9 +158,9 @@ const createPaymentIntent = async (req, res) => {
             message: error.message,
             stack: error.stack
         });
-        
-        res.status(500).json({ 
-            success: false, 
+
+        res.status(500).json({
+            success: false,
             message: 'Une erreur est survenue lors de la création du paiement',
             error: process.env.NODE_ENV === 'development' ? error.message : {}
         });
@@ -214,7 +171,7 @@ const createPaymentIntent = async (req, res) => {
 const verifyPayment = async (req, res) => {
     try {
         const { transactionId } = req.params;
-        
+
         const transaction = await Transaction.findByPk(transactionId, {
             include: [
                 {
@@ -225,9 +182,9 @@ const verifyPayment = async (req, res) => {
         });
 
         if (!transaction) {
-            return res.status(404).json({ 
+            return res.status(404).json({
                 success: false,
-                message: 'Transaction non trouvée' 
+                message: 'Transaction non trouvée'
             });
         }
 
@@ -238,10 +195,10 @@ const verifyPayment = async (req, res) => {
 
     } catch (error) {
         console.error('Erreur lors de la vérification du paiement:', error);
-        res.status(500).json({ 
-            success: false, 
+        res.status(500).json({
+            success: false,
             message: 'Erreur lors de la vérification du paiement',
-            error: error.message 
+            error: error.message
         });
     }
 };
