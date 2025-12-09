@@ -2,6 +2,8 @@ const { validationResult } = require('express-validator');
 const User = require('../models/user.model');
 const Transaction = require('../models/transaction.model');
 const { v4: uuidv4 } = require('uuid');
+const sequelize = require('../config/db');
+const { Op } = require('sequelize');
 
 // ============================================
 // 1️⃣ CRÉER UNE TRANSACTION
@@ -24,6 +26,7 @@ const createTransaction = async (req, res) => {
         const { 
             amount, 
             description, 
+            status,
             currency = 'EUR',
             paymentMethod = 'card',
             paymentDetails = {},
@@ -57,20 +60,35 @@ const createTransaction = async (req, res) => {
             });
         }
 
-        // Création de la transaction
+        // Création de la transaction avec statut initial
         const transaction = await Transaction.create({
             userId,
             amount: amountValue,
             currency,
             description: description || 'Paiement Epicerie Solidaire',
-            status: 'pending',
+            status: 'completed', // Le statut est forcé à 'completed' car le paiement a réussi
             paymentMethod,
-            paymentDetails,
+            paymentDetails: {
+                ...paymentDetails,
+              
+                updatedAt: new Date().toISOString()
+            },
             reference: `tx_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
-            metadata
+            metadata: {
+                ...metadata,
+                createdAt: new Date().toISOString()
+            }
         });
 
         console.log(`✅ Transaction créée: ${transaction.id}`);
+
+        // Mettre à jour la méthode de paiement de l'utilisateur
+        await user.update({
+            paiement: true,
+            paymentMethod: paymentMethod,
+            lastPaymentDate: new Date()
+        });
+        console.log(`✅ Méthode de paiement mise à jour pour l'utilisateur ${user.id}`);
 
         // Réponse au client
         return res.status(201).json({
@@ -80,7 +98,7 @@ const createTransaction = async (req, res) => {
                 reference: transaction.reference,
                 amount: transaction.amount,
                 currency: transaction.currency,
-                status: transaction.status,
+                status: transaction.status, 
                 paymentMethod: transaction.paymentMethod,
                 createdAt: transaction.createdAt,
                 updatedAt: transaction.updatedAt
@@ -104,52 +122,114 @@ const createTransaction = async (req, res) => {
 // ============================================
 const updateTransactionStatus = async (req, res) => {
     console.log('=== DÉBUT updateTransactionStatus ===');
+    console.log('Paramètres reçus:', { params: req.params, body: req.body });
+    
+    // Démarrer une transaction manuelle
+    const t = await sequelize.transaction();
     
     try {
         const { transactionId } = req.params;
-        const { status, paymentDetails = {}, error } = req.body;
+        let { status, paymentDetails = {}, error } = req.body;
+        
+        // Si le statut n'est pas fourni directement, essayer de le récupérer depuis paymentDetails
+        if (!status && paymentDetails && paymentDetails.status) {
+            status = paymentDetails.status;
+            console.log('Statut extrait de paymentDetails:', status);
+        }
 
         // Validation du statut
-        const validStatuses = ['pending', 'completed', 'failed', 'cancelled'];
-        if (!validStatuses.includes(status)) {
+        const validStatuses = ['pending', 'completed', 'failed', 'cancelled', 'refunded'];
+        const normalizedStatus = status ? status.trim().toLowerCase() : '';
+        
+        if (!validStatuses.includes(normalizedStatus)) {
+            console.error('❌ Statut invalide:', status);
             return res.status(400).json({
                 success: false,
                 message: `Statut invalide. Doit être l'un des suivants: ${validStatuses.join(', ')}`
             });
         }
 
-        // Récupération de la transaction
-        const transaction = await Transaction.findByPk(transactionId);
+        // Récupération de la transaction avec verrouillage
+        const transaction = await Transaction.findOne({
+            where: { id: transactionId },
+            lock: t.LOCK.UPDATE,
+            transaction: t
+        });
+
         if (!transaction) {
+            console.error('❌ Transaction non trouvée:', transactionId);
+            await t.rollback();
             return res.status(404).json({
                 success: false,
                 message: 'Transaction non trouvée'
             });
         }
 
-        // Vérification des autorisations (seul le propriétaire ou un admin peut mettre à jour)
-        if (transaction.userId !== req.user.id && !req.user.isAdmin) {
+        console.log('Transaction actuelle:', {
+            id: transaction.id,
+            currentStatus: transaction.status,
+            requestedStatus: normalizedStatus
+        });
+
+        // Vérification des autorisations
+        if (transaction.userId !== req.user?.id && !req.user?.isAdmin) {
+            console.error('❌ Accès non autorisé à la transaction:', { 
+                userId: req.user?.id, 
+                isAdmin: req.user?.isAdmin 
+            });
+            await t.rollback();
             return res.status(403).json({
                 success: false,
                 message: 'Non autorisé à mettre à jour cette transaction'
             });
         }
 
-        // Mise à jour de la transaction
-        const updateData = { status };
+        // Préparer les données de mise à jour
+        const updateData = { 
+            status: normalizedStatus,
+            updatedAt: new Date()
+        };
         
-        if (status === 'completed' && paymentDetails) {
-            updateData.paymentDetails = { ...transaction.paymentDetails, ...paymentDetails };
+        // Gestion des statuts spéciaux
+        if (normalizedStatus === 'completed') {
             updateData.completedAt = new Date();
+            if (paymentDetails) {
+                updateData.paymentDetails = { 
+                    ...(transaction.paymentDetails || {}), 
+                    ...paymentDetails 
+                };
+            }
+        } else if (normalizedStatus === 'cancelled') {
+            updateData.cancelledAt = new Date();
+        } else if (normalizedStatus === 'refunded') {
+            updateData.refundedAt = new Date();
         }
         
         if (error) {
-            updateData.error = error;
+            updateData.error = typeof error === 'string' ? error : JSON.stringify(error);
         }
 
-        await transaction.update(updateData);
+        // Mise à jour de la transaction avec les données préparées
+        console.log('Données de mise à jour:', updateData);
+        
+        // Utiliser la méthode update de l'instance pour s'assurer que les hooks sont déclenchés
+        await transaction.update(updateData, { 
+            transaction: t,
+            fields: Object.keys(updateData)
+        });
+        
+        // Rafraîchir l'objet transaction depuis la base de données
+        await transaction.reload({ transaction: t });
+        console.log('Transaction après mise à jour:', {
+            id: transaction.id,
+            status: transaction.status,
+            updatedAt: transaction.updatedAt
+        });
+        
+        // Valider la transaction
+        await t.commit();
 
-        console.log(`✅ Statut de la transaction ${transactionId} mis à jour: ${status}`);
+        console.log(`✅ Statut de la transaction ${transactionId} mis à jour: ${transaction.status} → ${normalizedStatus}`);
 
         return res.status(200).json({
             success: true,
@@ -157,11 +237,17 @@ const updateTransactionStatus = async (req, res) => {
                 id: transaction.id,
                 reference: transaction.reference,
                 status: transaction.status,
-                updatedAt: transaction.updatedAt
+                updatedAt: transaction.updatedAt,
+                previousStatus: transaction._previousDataValues.status
             }
         });
 
     } catch (error) {
+        // Annuler la transaction en cas d'erreur
+        if (t && !t.finished) {
+            await t.rollback();
+        }
+        
         console.error('❌ Erreur lors de la mise à jour du statut:', error);
         return res.status(500).json({
             success: false,

@@ -15,6 +15,7 @@ const corsOptions = {
 };
 app.use(cors(corsOptions));
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 
 // Servir les fichiers uploads statiquement
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));

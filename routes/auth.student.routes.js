@@ -16,4 +16,13 @@ router.put('/student-profile', auth, handleUpload, studentCtrl.updateStudentProf
 // Télécharger justificatif (admin ou propriétaire)
 router.get('/download-justificatif/:userId', auth, studentCtrl.downloadJustificatif);
 
+// Mot de passe oublié
+router.post('/forgot-password', studentCtrl.forgotPassword);
+
+// Afficher le formulaire de réinitialisation (GET)
+router.get('/reset-password/:token', studentCtrl.showResetPasswordForm);
+
+// Traiter la soumission du formulaire (POST)
+router.post('/reset-password/:token', studentCtrl.resetPassword);
+
 module.exports = router;
