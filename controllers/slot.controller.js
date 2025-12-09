@@ -25,11 +25,26 @@ exports.generateIntervalSlots = async (req, res) => {
         const slot = await Slot.findByPk(slotId);
 
         if (!slot) {
-            return res.status(404).json({ message: 'Slot non trouvé' });
+            return res.status(404).json({
+                success: false,
+                message: 'Créneau principal non trouvé',
+                code: 'SLOT_NOT_FOUND'
+            });
         }
 
-        // Supprimer les anciens intervalles pour ce slot
-        await IntervalSlot.destroy({ where: { slot_parent_id: slotId } });
+        // Vérifier si des créneaux existent déjà pour ce slot
+        const existingIntervals = await IntervalSlot.findOne({
+            where: { slot_parent_id: slotId }
+        });
+
+        if (existingIntervals) {
+            return res.status(400).json({
+                success: false,
+                message: 'Les créneaux ont déjà été générés pour ce créneau principal',
+                code: 'SLOTS_ALREADY_GENERATED',
+                existingSlotId: existingIntervals.id
+            });
+        }
 
         const intervalSlots = [];
         const [startHour, startMin] = slot.heure_debut.split(':').map(Number);
@@ -40,11 +55,15 @@ exports.generateIntervalSlots = async (req, res) => {
 
         // Générer et créer tous les intervalles
         for (let currentTime = startTime; currentTime < endTime; currentTime += slot.interval_minutes) {
-            const hour = Math.floor(currentTime / 60);
-            const minute = currentTime % 60;
+            const heureDebut = Math.floor(currentTime / 60);
+            const minuteDebut = currentTime % 60;
 
-            const heure_debut_interval = `${hour.toString().padStart(2, '0')}:${minute.toString().padStart(2, '0')}:00`;
-            const heure_fin_interval = `${hour.toString().padStart(2, '0')}:${(minute + slot.interval_minutes).toString().padStart(2, '0')}:00`;
+            const finTime = currentTime + slot.interval_minutes;
+            const heureFin = Math.floor(finTime / 60);
+            const minuteFin = finTime % 60;
+
+            const heure_debut_interval = `${heureDebut.toString().padStart(2, '0')}:${minuteDebut.toString().padStart(2, '0')}:00`;
+            const heure_fin_interval = `${heureFin.toString().padStart(2, '0')}:${minuteFin.toString().padStart(2, '0')}:00`;
 
             const intervalSlot = await IntervalSlot.create({
                 date: slot.date,
@@ -58,13 +77,37 @@ exports.generateIntervalSlots = async (req, res) => {
             intervalSlots.push(intervalSlot);
         }
 
-        res.json({
-            message: `${intervalSlots.length} créneaux générés`,
-            slots: intervalSlots
+
+        res.status(201).json({
+            success: true,
+            message: `${intervalSlots.length} créneaux ont été générés avec succès`,
+            count: intervalSlots.length,
+            slots: intervalSlots,
+            slotParentId: slot.id
         });
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: 'Erreur génération créneaux' });
+        console.error('Erreur lors de la génération des créneaux:', err);
+
+        // Gestion spécifique des erreurs de validation
+        if (err.name === 'SequelizeValidationError') {
+            return res.status(400).json({
+                success: false,
+                message: 'Erreur de validation des données',
+                code: 'VALIDATION_ERROR',
+                errors: err.errors.map(e => ({
+                    field: e.path,
+                    message: e.message
+                }))
+            });
+        }
+
+        // Erreur générique
+        res.status(500).json({
+            success: false,
+            message: 'Une erreur est survenue lors de la génération des créneaux',
+            code: 'INTERNAL_SERVER_ERROR',
+            details: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 };
 

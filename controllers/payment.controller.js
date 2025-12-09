@@ -1,186 +1,125 @@
 const { validationResult } = require('express-validator');
 const User = require('../models/user.model');
 const Transaction = require('../models/transaction.model');
-const sumupConfig = require('../config/sumup.config');
-const axios = require('axios');
+const { v4: uuidv4 } = require('uuid');
 
-// Créer une intention de paiement
-const createPaymentIntent = async (req, res) => {
-    console.log('Requête reçue pour créer une intention de paiement:', req.body);
-
+// ============================================
+// 1️⃣ CRÉER UNE TRANSACTION
+// ============================================
+const createTransaction = async (req, res) => {
+    console.log('=== DÉBUT createTransaction ===');
+    
     try {
+        // Validation des données
         const errors = validationResult(req);
         if (!errors.isEmpty()) {
-            console.error('Erreurs de validation:', errors.array());
-            return res.status(400).json({ errors: errors.array() });
+            console.error('❌ Erreurs de validation:', errors.array());
+            return res.status(400).json({
+                success: false,
+                message: 'Données de transaction invalides',
+                errors: errors.array()
+            });
         }
 
-        const { amount, description, userId } = req.body;
+        const { 
+            amount, 
+            description, 
+            currency = 'EUR',
+            paymentMethod = 'card',
+            paymentDetails = {},
+            metadata = {}
+        } = req.body;
 
-        console.log('Tentative de création de paiement pour l\'utilisateur:', userId, 'Montant:', amount);
+        const userId = req.user?.id;
 
-        // Vérifier si l'utilisateur existe
+        if (!userId) {
+            return res.status(401).json({
+                success: false,
+                message: 'Utilisateur non authentifié'
+            });
+        }
+
+        // Vérification que l'utilisateur existe
         const user = await User.findByPk(userId);
         if (!user) {
-            console.error('Utilisateur non trouvé avec l\'ID:', userId);
             return res.status(404).json({
                 success: false,
-                message: 'Utilisateur non trouvé',
-                error: { userId }
+                message: 'Utilisateur non trouvé'
             });
         }
 
-        // Créer une nouvelle transaction
-        let transaction;
-        try {
-            transaction = await Transaction.create({
-                userId: userId,
-                amount: parseFloat(amount),
-                description: description || 'Paiement Epicerie Solidaire',
-                status: 'pending'
-            });
-            console.log('Transaction créée avec succès:', transaction.id);
-        } catch (error) {
-            console.error('Erreur lors de la communication avec SumUp:');
-            console.error('- Statut de l\'erreur:', error.response?.status);
-            console.error('- Données de l\'erreur:', error.response?.data);
-            console.error('- Message d\'erreur:', error.message);
-
-            // Mettre à jour le statut de la transaction en échec
-            if (transaction) {
-                try {
-                    await transaction.update({ status: 'failed' });
-                } catch (updateError) {
-                    console.error('Erreur lors de la mise à jour du statut de la transaction:', updateError);
-                }
-            }
-
-            return res.status(error.response?.status || 500).json({
+        // Validation du montant
+        const amountValue = parseFloat(amount);
+        if (isNaN(amountValue) || amountValue <= 0) {
+            return res.status(400).json({
                 success: false,
-                message: 'Erreur lors de la communication avec le processeur de paiement',
-                error: process.env.NODE_ENV === 'development' ? {
-                    status: error.response?.status,
-                    data: error.response?.data,
-                    message: error.message
-                } : {}
+                message: 'Le montant doit être un nombre positif'
             });
         }
 
-        // Construction des URLs de retour
-        const frontendUrl = (process.env.FRONTEND_URL || 'http://localhost:4200').replace(/(\/)+$/, '');
-        const returnUrl = new URL(`/payment/return?transactionId=${transaction.id}`, frontendUrl).toString();
-        const cancelUrl = new URL(`/payment/cancel?transactionId=${transaction.id}`, frontendUrl).toString();
+        // Création de la transaction
+        const transaction = await Transaction.create({
+            userId,
+            amount: amountValue,
+            currency,
+            description: description || 'Paiement Epicerie Solidaire',
+            status: 'pending',
+            paymentMethod,
+            paymentDetails,
+            reference: `tx_${Date.now()}_${Math.floor(Math.random() * 1000)}`,
+            metadata
+        });
 
-        console.log('URLs de retour configurées:');
-        console.log('- URL de retour:', returnUrl);
-        console.log('- URL d\'annulation:', cancelUrl);
+        console.log(`✅ Transaction créée: ${transaction.id}`);
 
-        // Configuration de l'appel à l'API SumUp
-        const paymentData = {
-            checkout_reference: `PAYMENT_${Date.now()}_${transaction.id}`,
-            amount: parseFloat(amount).toFixed(0), // Le montant est déjà en centimes
-            currency: sumupConfig.defaultCurrency,
-            merchant_code: sumupConfig.merchantCode,
-            description: description || sumupConfig.defaultDescription,
-            return_url: returnUrl,
-            cancel_url: cancelUrl,
-            country: sumupConfig.defaultCountry,
-            pay_to_email: process.env.SUMUP_PAY_TO_EMAIL,
-            payment_type: 'card',
-            transaction_id: transaction.id.toString(),
-            customer: {
-                first_name: user.prenom || '',
-                last_name: user.nom || '',
-                email: user.email || ''
-            },
-            billing_address: {
-                line1: user.adresse || 'Non spécifiée',
-                city: user.ville || 'Non spécifiée',
-                postal_code: user.code_postal || '00000',
-                country: sumupConfig.defaultCountry
+        // Réponse au client
+        return res.status(201).json({
+            success: true,
+            transaction: {
+                id: transaction.id,
+                reference: transaction.reference,
+                amount: transaction.amount,
+                currency: transaction.currency,
+                status: transaction.status,
+                paymentMethod: transaction.paymentMethod,
+                createdAt: transaction.createdAt,
+                updatedAt: transaction.updatedAt
             }
-        };
+        });
 
-        console.log('Configuration SumUp:');
-        console.log('- URL:', `${sumupConfig.apiUrl}/v0.1/checkouts`);
-        console.log('- Clé API:', sumupConfig.apiKey ? 'PRÉSENTE' : 'MANQUANTE');
-        console.log('Données du paiement:', JSON.stringify(paymentData, null, 2));
-
-        try {
-            if (!sumupConfig.apiKey) {
-                throw new Error('Clé API SumUp non configurée');
-            }
-
-            console.log('Envoi de la requête à SumUp...');
-            const response = await axios.post(
-                `${sumupConfig.apiUrl}/v0.1/checkouts`,
-                paymentData,
-                {
-                    headers: {
-                        'Authorization': `Bearer ${sumupConfig.apiKey}`,
-                        'Content-Type': 'application/json',
-                        'Content-Type': 'application/json',
-                        'Accept': 'application/json'
-                    },
-                    timeout: 10000 // 10 secondes de timeout
-                }
-            );
-
-            console.log('Réponse de SumUp:', JSON.stringify(response.data, null, 2));
-
-            if (!response.data || !response.data.id) {
-                throw new Error('Réponse invalide de l\'API SumUp');
-            }
-
-            // Mettre à jour la transaction avec la référence de paiement
-            transaction.transactionId = response.data.id;
-            transaction.status = 'pending';
-            await transaction.save();
-
-
-        } catch (error) {
-            console.error('Erreur lors de l\'appel à l\'API SumUp:', {
-                message: error.message,
-                response: error.response?.data,
-                stack: error.stack
-            });
-
-            // Marquer la transaction comme échouée
-            transaction.status = 'failed';
-            transaction.error = error.response?.data?.message || error.message;
-            await transaction.save();
-
-            // Relancer l'erreur pour le gestionnaire global
-            throw new Error(`Échec de la création du paiement: ${error.message}`);
-        }
     } catch (error) {
-        console.error('Erreur lors de la création du paiement:', {
-            message: error.message,
-            stack: error.stack
-        });
-
-        res.status(500).json({
+        console.error('❌ Erreur lors de la création de la transaction:', error);
+        return res.status(500).json({
             success: false,
-            message: 'Une erreur est survenue lors de la création du paiement',
-            error: process.env.NODE_ENV === 'development' ? error.message : {}
+            message: 'Une erreur est survenue lors de la création de la transaction',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
+    } finally {
+        console.log('=== FIN createTransaction ===\n');
     }
 };
 
-// Vérifier le statut d'une transaction
-const verifyPayment = async (req, res) => {
+// ============================================
+// 2️⃣ METTRE À JOUR LE STATUT D'UNE TRANSACTION
+// ============================================
+const updateTransactionStatus = async (req, res) => {
+    console.log('=== DÉBUT updateTransactionStatus ===');
+    
     try {
         const { transactionId } = req.params;
+        const { status, paymentDetails = {}, error } = req.body;
 
-        const transaction = await Transaction.findByPk(transactionId, {
-            include: [
-                {
-                    model: User,
-                    attributes: ['id', 'nom', 'prenom', 'email']
-                }
-            ]
-        });
+        // Validation du statut
+        const validStatuses = ['pending', 'completed', 'failed', 'cancelled'];
+        if (!validStatuses.includes(status)) {
+            return res.status(400).json({
+                success: false,
+                message: `Statut invalide. Doit être l'un des suivants: ${validStatuses.join(', ')}`
+            });
+        }
 
+        // Récupération de la transaction
+        const transaction = await Transaction.findByPk(transactionId);
         if (!transaction) {
             return res.status(404).json({
                 success: false,
@@ -188,34 +127,354 @@ const verifyPayment = async (req, res) => {
             });
         }
 
-        res.status(200).json({
+        // Vérification des autorisations (seul le propriétaire ou un admin peut mettre à jour)
+        if (transaction.userId !== req.user.id && !req.user.isAdmin) {
+            return res.status(403).json({
+                success: false,
+                message: 'Non autorisé à mettre à jour cette transaction'
+            });
+        }
+
+        // Mise à jour de la transaction
+        const updateData = { status };
+        
+        if (status === 'completed' && paymentDetails) {
+            updateData.paymentDetails = { ...transaction.paymentDetails, ...paymentDetails };
+            updateData.completedAt = new Date();
+        }
+        
+        if (error) {
+            updateData.error = error;
+        }
+
+        await transaction.update(updateData);
+
+        console.log(`✅ Statut de la transaction ${transactionId} mis à jour: ${status}`);
+
+        return res.status(200).json({
             success: true,
-            data: transaction
+            transaction: {
+                id: transaction.id,
+                reference: transaction.reference,
+                status: transaction.status,
+                updatedAt: transaction.updatedAt
+            }
         });
 
     } catch (error) {
-        console.error('Erreur lors de la vérification du paiement:', error);
-        res.status(500).json({
+        console.error('❌ Erreur lors de la mise à jour du statut:', error);
+        return res.status(500).json({
             success: false,
-            message: 'Erreur lors de la vérification du paiement',
-            error: error.message
+            message: 'Une erreur est survenue lors de la mise à jour du statut',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    } finally {
+        console.log('=== FIN updateTransactionStatus ===\n');
+    }
+};
+
+// ============================================
+// 3️⃣ OBTENIR LES DÉTAILS D'UNE TRANSACTION
+// ============================================
+const getTransaction = async (req, res) => {
+    try {
+        const { transactionId } = req.params;
+
+        const transaction = await Transaction.findByPk(transactionId, {
+            include: [
+                { 
+                    model: User, 
+                    attributes: ['id', 'nom', 'prenom', 'email'],
+                    as: 'user'
+                }
+            ]
+        });
+
+        if (!transaction) {
+            return res.status(404).json({ success: false, message: "Transaction non trouvée" });
+        }
+
+        // Vérification des autorisations
+        if (transaction.userId !== req.user.id && !req.user.isAdmin) {
+            return res.status(403).json({
+                success: false,
+                message: 'Non autorisé à voir cette transaction'
+            });
+        }
+
+        // Formatage de la réponse
+        const response = {
+            id: transaction.id,
+            reference: transaction.reference,
+            amount: transaction.amount,
+            currency: transaction.currency,
+            description: transaction.description,
+            status: transaction.status,
+            paymentMethod: transaction.paymentMethod,
+            paymentDetails: transaction.paymentDetails,
+            createdAt: transaction.createdAt,
+            updatedAt: transaction.updatedAt,
+            user: {
+                id: transaction.user.id,
+                nom: transaction.user.nom,
+                prenom: transaction.user.prenom,
+                email: transaction.user.email
+            }
+        };
+
+        return res.status(200).json({
+            success: true,
+            transaction: response
+        });
+
+    } catch (error) {
+        console.error("Erreur lors de la récupération de la transaction:", error);
+        return res.status(500).json({ 
+            success: false, 
+            message: 'Une erreur est survenue lors de la récupération de la transaction',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
         });
     }
 };
 
-// Gérer le retour de paiement
-const handlePaymentReturn = async (req, res) => {
-    // Code pour gérer le retour de paiement
+// ============================================
+// 4️⃣ LISTER LES TRANSACTIONS D'UN UTILISATEUR
+// ============================================
+const listUserTransactions = async (req, res) => {
+    try {
+        const userId = req.user.id;
+        const { limit = 10, offset = 0, status } = req.query;
+
+        // Options de la requête
+        const options = {
+            where: { userId },
+            order: [['createdAt', 'DESC']],
+            limit: Math.min(parseInt(limit), 100),
+            offset: parseInt(offset)
+        };
+
+        // Filtre par statut si fourni
+        if (status) {
+            options.where.status = status;
+        }
+
+        const { count, rows: transactions } = await Transaction.findAndCountAll(options);
+
+        // Formatage de la réponse
+        const formattedTransactions = transactions.map(transaction => ({
+            id: transaction.id,
+            reference: transaction.reference,
+            amount: transaction.amount,
+            currency: transaction.currency,
+            description: transaction.description,
+            status: transaction.status,
+            paymentMethod: transaction.paymentMethod,
+            createdAt: transaction.createdAt,
+            updatedAt: transaction.updatedAt
+        }));
+
+        return res.status(200).json({
+            success: true,
+            data: formattedTransactions,
+            pagination: {
+                total: count,
+                limit: parseInt(limit),
+                offset: parseInt(offset)
+            }
+        });
+
+    } catch (error) {
+        console.error("Erreur lors de la récupération des transactions:", error);
+        return res.status(500).json({
+            success: false,
+            message: 'Une erreur est survenue lors de la récupération des transactions',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
 };
 
-// Gérer l'annulation de paiement
-const handlePaymentCancel = async (req, res) => {
-    // Code pour gérer l'annulation de paiement
+// ============================================
+// 5️⃣ ANNULER UNE TRANSACTION
+// ============================================
+const cancelTransaction = async (req, res) => {
+    try {
+        const { transactionId } = req.params;
+        const userId = req.user.id;
+
+        // Récupération de la transaction
+        const transaction = await Transaction.findByPk(transactionId);
+        if (!transaction) {
+            return res.status(404).json({
+                success: false,
+                message: 'Transaction non trouvée'
+            });
+        }
+
+        // Vérification des autorisations
+        if (transaction.userId !== userId && !req.user.isAdmin) {
+            return res.status(403).json({
+                success: false,
+                message: 'Non autorisé à annuler cette transaction'
+            });
+        }
+
+        // Vérification que la transaction peut être annulée
+        if (transaction.status !== 'pending') {
+            return res.status(400).json({
+                success: false,
+                message: 'Seules les transactions en attente peuvent être annulées'
+            });
+        }
+
+        // Mise à jour du statut
+        await transaction.update({ 
+            status: 'cancelled',
+            cancelledAt: new Date()
+        });
+
+        return res.status(200).json({
+            success: true,
+            message: 'Transaction annulée avec succès',
+            transaction: {
+                id: transaction.id,
+                status: 'cancelled',
+                updatedAt: transaction.updatedAt
+            }
+        });
+
+    } catch (error) {
+        console.error("Erreur lors de l'annulation de la transaction:", error);
+        return res.status(500).json({
+            success: false,
+            message: "Une erreur est survenue lors de l'annulation de la transaction",
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
 };
 
+// ============================================
+// 6️⃣ WEBHOOK POUR LES PAIEMENTS EXTERNES (optionnel)
+// ============================================
+const handlePaymentWebhook = async (req, res) => {
+    try {
+        const { event, data } = req.body;
+        
+        // Log pour le débogage
+        console.log('Webhook reçu:', { event, data });
+        
+        // Vérification du format de la requête
+        if (!event || !data || !data.reference) {
+            return res.status(400).json({
+                success: false,
+                message: 'Format de requête invalide'
+            });
+        }
+
+        // Recherche de la transaction par référence
+        const transaction = await Transaction.findOne({
+            where: { reference: data.reference }
+        });
+
+        if (!transaction) {
+            console.error('Transaction non trouvée pour la référence:', data.reference);
+            return res.status(404).json({
+                success: false,
+                message: 'Transaction non trouvée'
+            });
+        }
+
+        // Traitement en fonction du type d'événement
+        let status;
+        switch (event) {
+            case 'payment.succeeded':
+                status = 'completed';
+                break;
+            case 'payment.failed':
+                status = 'failed';
+                break;
+            case 'payment.refunded':
+                status = 'refunded';
+                break;
+            default:
+                return res.status(200).json({
+                    success: true,
+                    message: 'Événement non traité',
+                    event
+                });
+        }
+
+        // Mise à jour de la transaction
+        await transaction.update({
+            status,
+            paymentDetails: {
+                ...transaction.paymentDetails,
+                lastWebhookEvent: {
+                    event,
+                    receivedAt: new Date(),
+                    data
+                }
+            }
+        });
+
+        // Réponse de succès
+        return res.status(200).json({
+            success: true,
+            message: `Transaction mise à jour: ${status}`
+        });
+
+    } catch (error) {
+        console.error('Erreur lors du traitement du webhook:', error);
+        return res.status(500).json({
+            success: false,
+            message: 'Erreur lors du traitement du webhook',
+            error: process.env.NODE_ENV === 'development' ? error.message : undefined
+        });
+    }
+};
+
+// ============================================
+// EXPORT DES FONCTIONS
+// ============================================
 module.exports = {
-    createPaymentIntent,
-    verifyPayment,
-    handlePaymentReturn,
-    handlePaymentCancel,
+    // Création et gestion des transactions
+    createTransaction,
+    getTransaction,
+    listUserTransactions,
+    updateTransactionStatus,
+    cancelTransaction,
+    
+    // Webhook pour les paiements externes
+    handlePaymentWebhook
+};
+
+// ============================================
+// 4️⃣ RETURN / CANCEL
+// ============================================
+const handlePaymentReturn = async (req, res) => {
+    const { transactionId } = req.query;
+    const frontend = (process.env.FRONTEND_URL || "http://localhost:4200").replace(/\/$/, "");
+
+    return res.redirect(`${frontend}/payment/success?transactionId=${transactionId}`);
+};
+
+const handlePaymentCancel = async (req, res) => {
+    const { transactionId } = req.query;
+
+    if (transactionId) {
+        await Transaction.update({ status: "cancelled" }, { where: { id: transactionId } });
+    }
+
+    const frontend = (process.env.FRONTEND_URL || "http://localhost:4200").replace(/\/$/, "");
+    return res.redirect(`${frontend}/payment/cancelled`);
+};
+
+
+// EXPORTS
+module.exports = {
+    createTransaction,
+    updateTransactionStatus,
+    getTransaction,
+    listUserTransactions,
+    cancelTransaction,
+    handlePaymentWebhook
 };

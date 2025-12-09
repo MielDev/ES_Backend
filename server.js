@@ -36,7 +36,7 @@ app.use('/api/auth/student', authStudentRoutes); // Routes étudiant sur un sous
 app.use('/api/slots', slotRoutes);
 app.use('/api/appointments', apptRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api/payments', paymentRoutes); // Routes de paiement
+app.use('/api', paymentRoutes); // Routes de paiement - Changé de '/api/payments' à '/api'
 
 // Gestion des erreurs globales
 app.use((err, req, res, next) => {
