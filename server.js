@@ -7,7 +7,7 @@ const { sequelize } = require('./models');
 const app = express();
 // Configuration CORS pour accepter les requêtes avec des identifiants
 const corsOptions = {
-    origin: 'https://app.epicoletudiantedumans.fr', // Suppression du slash final
+    origin: 'https://app.episoletudiantedumans.fr', // Suppression du slash final
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
