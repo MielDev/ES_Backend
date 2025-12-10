@@ -7,16 +7,20 @@ const { sequelize } = require('./models');
 const app = express();
 // Configuration CORS pour accepter les requêtes avec des identifiants
 const corsOptions = {
-    origin: 'https://app.episoletudiantedumans.fr', // Suppression du slash final
+    origin: ['https://app.episoletudiantedumans.fr', 'http://localhost:3000'],
     credentials: true,
-    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization'],
-    exposedHeaders: ['Content-Range', 'X-Content-Range']
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS', 'HEAD'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
+    exposedHeaders: ['Content-Range', 'X-Content-Range', 'Content-Disposition'],
+    maxAge: 86400, // 24 heures
+    optionsSuccessStatus: 200
 };
 
-// Gestion des requêtes OPTIONS pour CORS
-app.options('*', cors(corsOptions));
+// Configuration du middleware CORS
 app.use(cors(corsOptions));
+
+// Gestion des requêtes OPTIONS (preflight)
+app.options('*', cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
