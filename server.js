@@ -7,18 +7,18 @@ const { sequelize } = require('./models');
 const app = express();
 // Configuration CORS pour accepter les requêtes avec des identifiants
 const corsOptions = {
-    origin: 'https://app.episoletudiantedumans.fr/', // Remplacez par l'URL de votre frontend
+    origin: 'https://app.epicoletudiantedumans.fr', // Suppression du slash final
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization'],
     exposedHeaders: ['Content-Range', 'X-Content-Range']
 };
+
+// Gestion des requêtes OPTIONS pour CORS
+app.options('*', cors(corsOptions));
 app.use(cors(corsOptions));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Servir les fichiers uploads statiquement
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
 // Import des services
 const { startMissedAppointmentsCheck } = require('./services/appointmentService');
