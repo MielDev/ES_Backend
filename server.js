@@ -7,7 +7,7 @@ const app = express();
 
 // Configuration CORS
 const corsOptions = {
-    origin: ['https://app.episoletudiantedumans.fr', 'http://localhost:3000'],
+    origin: ['https://app.episoletudiantedumans.fr'],
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
