@@ -1,33 +1,43 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
-const path = require('path');
 const { sequelize } = require('./models');
 
 const app = express();
-// Configuration CORS pour accepter les requêtes avec des identifiants
+
+// Configuration CORS
 const corsOptions = {
     origin: ['https://app.episoletudiantedumans.fr', 'http://localhost:3000'],
     credentials: true,
-    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS', 'HEAD'],
+    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
     exposedHeaders: ['Content-Range', 'X-Content-Range', 'Content-Disposition'],
-    maxAge: 86400, // 24 heures
     optionsSuccessStatus: 200
 };
 
-// Configuration du middleware CORS
+// Middleware CORS (doit être **avant** toutes les routes)
 app.use(cors(corsOptions));
 
 // Gestion des requêtes OPTIONS (preflight)
-app.options('*', cors(corsOptions));
+app.use((req, res, next) => {
+    if (req.method === 'OPTIONS') {
+        res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
+        res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
+        res.header('Access-Control-Allow-Headers', req.headers['access-control-request-headers'] || '*');
+        res.header('Access-Control-Allow-Credentials', 'true');
+        return res.sendStatus(200);
+    }
+    next();
+});
+
+// Middleware pour parser JSON et URL-encoded
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Import des services
 const { startMissedAppointmentsCheck } = require('./services/appointmentService');
 
-// routes
+// Import des routes
 const authRoutes = require('./routes/auth.routes');
 const authStudentRoutes = require('./routes/auth.student.routes');
 const slotRoutes = require('./routes/slot.routes');
@@ -37,11 +47,11 @@ const paymentRoutes = require('./routes/payment.routes');
 
 // Routes API
 app.use('/api/auth', authRoutes);
-app.use('/api/auth/student', authStudentRoutes); // Routes étudiant sur un sous-chemin
+app.use('/api/auth/student', authStudentRoutes);
 app.use('/api/slots', slotRoutes);
 app.use('/api/appointments', apptRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api', paymentRoutes); // Routes de paiement - Changé de '/api/payments' à '/api'
+app.use('/api', paymentRoutes);
 
 // Gestion des erreurs globales
 app.use((err, req, res, next) => {
@@ -53,7 +63,7 @@ app.use((err, req, res, next) => {
     });
 });
 
-// Gestion des routes non trouvées
+// Routes non trouvées
 app.use((req, res) => {
     res.status(404).json({
         success: false,
@@ -62,38 +72,28 @@ app.use((req, res) => {
     });
 });
 
-// Configuration de synchronisation sécurisée
+// Synchronisation DB
 const syncDB = async () => {
     try {
-        // Désactive la vérification des clés étrangères temporairement
         await sequelize.query('SET FOREIGN_KEY_CHECKS = 0', { raw: true });
-
-        // Synchronise les modèles avec des options sécurisées
         await sequelize.sync({
-            alter: {
-                drop: false, // Ne supprime pas les colonnes ou tables
-            },
-            logging: console.log, // Affiche les requêtes SQL
+            alter: { drop: false },
+            logging: console.log,
             benchmark: true
         });
-
-        // Réactive la vérification des clés étrangères
         await sequelize.query('SET FOREIGN_KEY_CHECKS = 1', { raw: true });
-
         console.log('✅ Base de données synchronisée avec succès');
     } catch (error) {
         console.error('❌ Erreur lors de la synchronisation de la base de données:');
         console.error(error);
-        process.exit(1); // Arrête le processus en cas d'erreur critique
+        process.exit(1);
     }
 };
 
-// Démarrage du serveur
+// Démarrage serveur
 const PORT = process.env.PORT || 3555;
 syncDB().then(() => {
-    // Démarrer la vérification périodique des rendez-vous manqués
     startMissedAppointmentsCheck();
-
     app.listen(PORT, () => {
         console.log(`🚀 Serveur démarré sur le port ${PORT}`);
     });
