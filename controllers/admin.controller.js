@@ -1,5 +1,4 @@
-const { Op, sequelize } = require('../models');
-const { AdminConfig, User, Appointment, Payment, Slot } = require('../models');
+const { sequelize, Op, AdminConfig, User, Appointment, Payment, Slot } = require('../models');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
