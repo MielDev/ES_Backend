@@ -104,14 +104,16 @@ exports.bookAppointment = async (req, res) => {
         }
 
         // Vérifier et mettre à jour la limite de passages de l'utilisateur
-        if (user.passages_utilises >= user.passages_max_autorises) {
-            return res.status(400).json({
-                message: `Vous avez atteint votre limite de ${user.passages_max_autorises} passages`
-            });
+        // Si l'utilisateur n'a pas de paiement valide, on vérifie la limite de passages
+        if (!user.paiement) {
+            if (user.passages_utilises >= user.passages_max_autorises) {
+                return res.status(400).json({
+                    message: `Vous avez atteint votre limite de ${user.passages_max_autorises} passages`
+                });
+            }
+            // Incrémenter le compteur de passages seulement si pas de paiement valide
+            await user.increment('passages_utilises');
         }
-
-        // Décrémenter le nombre de passages restants
-        await user.increment('passages_utilises');
 
         // Créer un nouveau rendez-vous avec les horaires
         const appointment = await Appointment.create({
