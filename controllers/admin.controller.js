@@ -1,7 +1,43 @@
+const { Op } = require('sequelize');
 const { AdminConfig, User, Appointment, Payment, Slot } = require('../models');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
+
+// Marquer les rendez-vous non validés comme manqués
+exports.markMissedAppointments = async (req, res) => {
+    try {
+        const now = new Date();
+        const today = now.toISOString().split('T')[0];
+        
+        // Mettre à jour les rendez-vous non validés dont la date est passée
+        const [updatedCount] = await Appointment.update(
+            { status: 'manqué' },
+            { 
+                where: {
+                    status: 'confirmé',
+                    valide_par_admin: false,
+                    date_rdv: {
+                        [Op.lt]: today
+                    }
+                }
+            }
+        );
+
+        res.json({
+            success: true,
+            message: `${updatedCount} rendez-vous ont été marqués comme manqués`,
+            count: updatedCount
+        });
+    } catch (err) {
+        console.error('Erreur lors du marquage des rendez-vous manqués:', err);
+        res.status(500).json({
+            success: false,
+            message: 'Erreur lors du marquage des rendez-vous manqués',
+            error: err.message
+        });
+    }
+};
 
 // Configuration des créneaux
 exports.getAdminConfig = async (req, res) => {

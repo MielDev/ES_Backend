@@ -19,6 +19,7 @@ router.patch('/users/:id/passages', auth, isAdmin, adminCtrl.updateUserPassages)
 router.get('/appointments', auth, isAdmin, adminCtrl.getAllAppointmentsForAdmin);
 router.get('/appointments/unvalidated', auth, isAdmin, adminCtrl.getUnvalidatedAppointments);
 router.patch('/appointments/:id/validate', auth, isAdmin, adminCtrl.validateAppointment);
+router.patch('/appointments/mark-missed', auth, isAdmin, adminCtrl.markMissedAppointments);
 
 // Gestion des justificatifs étudiants
 router.get('/users/pending-validation', auth, isAdmin, adminCtrl.getUsersPendingValidation);

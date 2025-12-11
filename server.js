@@ -35,7 +35,6 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
 // Import des services
-const { startMissedAppointmentsCheck } = require('./services/appointmentService');
 
 // Import des routes
 const authRoutes = require('./routes/auth.routes');
@@ -93,7 +92,6 @@ const syncDB = async () => {
 // Démarrage serveur
 const PORT = process.env.PORT || 3555;
 syncDB().then(() => {
-    startMissedAppointmentsCheck();
     app.listen(PORT, () => {
         console.log(`🚀 Serveur démarré sur le port ${PORT}`);
     });
