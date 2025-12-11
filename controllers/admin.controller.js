@@ -5,22 +5,40 @@ const multer = require('multer');
 
 // Marquer les rendez-vous non validés comme manqués
 exports.markMissedAppointments = async (req, res) => {
+    console.log('Début de la fonction markMissedAppointments');
+    console.log('Op est défini ?', !!Op);
+    console.log('Op.lt est défini ?', Op && Op.lt);
+    
     const transaction = await sequelize.transaction();
     try {
         const now = new Date();
         const today = now.toISOString().split('T')[0];
+        console.log('Date du jour pour la comparaison:', today);
         
         // 1. Trouver les rendez-vous non validés dont la date est passée
-        const appointments = await Appointment.findAll({
-            where: {
-                status: 'confirmé',
-                valide_par_admin: false,
-                date_rdv: {
-                    [Op.lt]: today
-                }
-            },
-            transaction
-        });
+        // Utilisation d'une requête brute pour éviter les problèmes avec Op
+        const appointments = await sequelize.query(
+            `SELECT * FROM "Appointments" 
+             WHERE status = 'confirmé' 
+             AND "valide_par_admin" = false 
+             AND "date_rdv" < :today`, 
+            {
+                replacements: { today },
+                type: sequelize.QueryTypes.SELECT,
+                transaction
+            }
+        );
+        
+        console.log(`Nombre de rendez-vous trouvés: ${appointments.length}`);
+
+        if (appointments.length === 0) {
+            await transaction.commit();
+            return res.json({
+                success: true,
+                message: 'Aucun rendez-vous à marquer comme manqué',
+                count: 0
+            });
+        }
 
         if (appointments.length === 0) {
             await transaction.commit();
@@ -33,22 +51,31 @@ exports.markMissedAppointments = async (req, res) => {
 
         // 2. Récupérer les IDs des créneaux à désactiver
         const slotIds = [...new Set(appointments.map(appt => appt.slot_id))];
+        const appointmentIds = appointments.map(a => a.id);
 
-        // 3. Mettre à jour les rendez-vous comme manqués
-        await Appointment.update(
-            { status: 'manqué' },
-            { 
-                where: { id: appointments.map(a => a.id) },
+        // 3. Mettre à jour les rendez-vous comme manqués avec une requête brute
+        await sequelize.query(
+            `UPDATE "Appointments" 
+             SET status = 'manqué', 
+                 "updatedAt" = NOW() 
+             WHERE id IN (:appointmentIds)`,
+            {
+                replacements: { appointmentIds },
+                type: sequelize.QueryTypes.UPDATE,
                 transaction
             }
         );
 
         // 4. Désactiver les créneaux associés
         if (slotIds.length > 0) {
-            await Slot.update(
-                { is_active: false },
-                { 
-                    where: { id: slotIds },
+            await sequelize.query(
+                `UPDATE "Slots" 
+                 SET "is_active" = false, 
+                     "updatedAt" = NOW() 
+                 WHERE id IN (:slotIds)`,
+                {
+                    replacements: { slotIds },
+                    type: sequelize.QueryTypes.UPDATE,
                     transaction
                 }
             );
