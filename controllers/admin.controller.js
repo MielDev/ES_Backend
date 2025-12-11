@@ -18,10 +18,10 @@ exports.markMissedAppointments = async (req, res) => {
         // 1. Trouver les rendez-vous non validés dont la date est passée
         // Utilisation d'une requête brute pour éviter les problèmes avec Op
         const appointments = await sequelize.query(
-            `SELECT * FROM "Appointments" 
-             WHERE status = 'confirmé' 
-             AND "valide_par_admin" = false 
-             AND "date_rdv" < :today`, 
+            'SELECT * FROM `Appointments` ' +
+            'WHERE status = "confirmé" ' +
+            'AND valide_par_admin = 0 ' +
+            'AND date_rdv < :today',
             {
                 replacements: { today },
                 type: sequelize.QueryTypes.SELECT,
@@ -55,12 +55,12 @@ exports.markMissedAppointments = async (req, res) => {
 
         // 3. Mettre à jour les rendez-vous comme manqués avec une requête brute
         await sequelize.query(
-            `UPDATE "Appointments" 
-             SET status = 'manqué', 
-                 "updatedAt" = NOW() 
-             WHERE id IN (:appointmentIds)`,
+            'UPDATE `Appointments` ' +
+            'SET status = "manqué", ' +
+            'updatedAt = NOW() ' +
+            'WHERE id IN (?)',
             {
-                replacements: { appointmentIds },
+                replacements: [appointmentIds],
                 type: sequelize.QueryTypes.UPDATE,
                 transaction
             }
@@ -69,12 +69,12 @@ exports.markMissedAppointments = async (req, res) => {
         // 4. Désactiver les créneaux associés
         if (slotIds.length > 0) {
             await sequelize.query(
-                `UPDATE "Slots" 
-                 SET "is_active" = false, 
-                     "updatedAt" = NOW() 
-                 WHERE id IN (:slotIds)`,
+                'UPDATE `Slots` ' +
+                'SET is_active = 0, ' +
+                'updatedAt = NOW() ' +
+                'WHERE id IN (?)',
                 {
-                    replacements: { slotIds },
+                    replacements: [slotIds],
                     type: sequelize.QueryTypes.UPDATE,
                     transaction
                 }
