@@ -8,13 +8,13 @@ exports.markMissedAppointments = async (req, res) => {
     console.log('Début de la fonction markMissedAppointments');
     console.log('Op est défini ?', !!Op);
     console.log('Op.lt est défini ?', Op && Op.lt);
-    
+
     const transaction = await sequelize.transaction();
     try {
         const now = new Date();
         const today = now.toISOString().split('T')[0];
         console.log('Date du jour pour la comparaison:', today);
-        
+
         // 1. Trouver les rendez-vous non validés dont la date est passée
         // Utilisation d'une requête brute pour éviter les problèmes avec Op
         const appointments = await sequelize.query(
@@ -28,7 +28,7 @@ exports.markMissedAppointments = async (req, res) => {
                 transaction
             }
         );
-        
+
         console.log(`Nombre de rendez-vous trouvés: ${appointments.length}`);
 
         if (appointments.length === 0) {
@@ -70,7 +70,7 @@ exports.markMissedAppointments = async (req, res) => {
         if (slotIds.length > 0) {
             await sequelize.query(
                 'UPDATE `Slots` ' +
-                'SET is_active = 0, ' +
+                'SET isActive = 0, ' +
                 'updatedAt = NOW() ' +
                 'WHERE id IN (?)',
                 {
@@ -82,7 +82,7 @@ exports.markMissedAppointments = async (req, res) => {
         }
 
         await transaction.commit();
-        
+
         res.json({
             success: true,
             message: `${appointments.length} rendez-vous ont été marqués comme manqués et leurs créneaux désactivés`,
