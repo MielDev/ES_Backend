@@ -103,10 +103,13 @@ exports.bookAppointment = async (req, res) => {
             });
         }
 
-        // Vérifier et mettre à jour la limite de passages de l'utilisateur
-        if (user.passages_utilises >= user.passages_max_autorises) {
+        // Vérifier si l'utilisateur a effectué un paiement
+        const hasPaid = user.paiement === true;
+
+        // Si l'utilisateur n'a pas payé et a atteint sa limite de passages, on refuse
+        if (!hasPaid && user.passages_utilises >= user.passages_max_autorises) {
             return res.status(400).json({
-                message: `Vous avez atteint votre limite de ${user.passages_max_autorises} passages`
+                message: `Vous avez atteint votre limite de ${user.passages_max_autorises} passages. Veuillez effectuer un paiement pour continuer.`
             });
         }
 
