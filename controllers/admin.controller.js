@@ -180,33 +180,41 @@ exports.getUserById = async (req, res) => {
 
 // Configuration de Multer pour le stockage des fichiers
 const storage = multer.diskStorage({
-    destination: (req, file, cb) => {
+    destination: function (req, file, cb) {
         const uploadDir = path.join(__dirname, '../uploads');
         if (!fs.existsSync(uploadDir)) {
             fs.mkdirSync(uploadDir, { recursive: true });
         }
         cb(null, uploadDir);
     },
-    filename: (req, file, cb) => {
+    filename: function (req, file, cb) {
         const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
-        cb(null, 'justificatif-' + uniqueSuffix + path.extname(file.originalname).toLowerCase());
+        const ext = path.extname(file.originalname).toLowerCase();
+        cb(null, 'justificatif-' + uniqueSuffix + ext);
     }
 });
 
+const fileFilter = (req, file, cb) => {
+    const allowedTypes = ['application/pdf', 'image/jpeg', 'image/png'];
+    const maxSize = 5 * 1024 * 1024; // 5MB
+    
+    if (!allowedTypes.includes(file.mimetype)) {
+        return cb(new Error('Type de fichier non supporté. Seuls les fichiers PDF, JPG et PNG sont autorisés.'), false);
+    }
+    
+    if (req.file && req.file.size > maxSize) {
+        return cb(new Error(`La taille du fichier dépasse la limite de ${maxSize / (1024 * 1024)}MB`), false);
+    }
+    
+    cb(null, true);
+};
+
 const upload = multer({
     storage: storage,
-    limits: { fileSize: 5 * 1024 * 1024 }, // 5MB max
-    fileFilter: (req, file, cb) => {
-        const filetypes = /jpeg|jpg|png|gif|pdf/;
-        const extname = filetypes.test(path.extname(file.originalname).toLowerCase());
-        const isImage = /jpeg|jpg|png|gif/.test(file.mimetype);
-        const isPDF = file.mimetype === 'application/pdf';
-
-        if ((isImage || isPDF) && extname) {
-            return cb(null, true);
-        } else {
-            cb(new Error('Seuls les fichiers images (JPEG, JPG, PNG, GIF) et PDF sont autorisés'));
-        }
+    fileFilter: fileFilter,
+    limits: { 
+        fileSize: 5 * 1024 * 1024, // 5MB
+        files: 1
     }
 }).single('justificatif');
 
@@ -525,15 +533,32 @@ exports.getStudentJustificatifInfo = async (req, res) => {
 
         if (!user) return res.status(404).json({ message: 'Utilisateur non trouvé' });
 
+        // Construire l'URL complète du justificatif
+        let justificatif_url = null;
+        if (user.justificatif_path) {
+            const protocol = req.secure ? 'https' : 'http';
+            justificatif_url = `${protocol}://${req.get('host')}/uploads/${user.justificatif_path}`;
+            
+            // Vérifier si le fichier existe physiquement
+            const filePath = path.join(__dirname, '../uploads', user.justificatif_path);
+            if (!fs.existsSync(filePath)) {
+                console.warn(`Le fichier du justificatif n'existe pas: ${filePath}`);
+                justificatif_url = null;
+            }
+        }
+
         res.json({
             user: {
                 ...user.toJSON(),
-                justificatif_url: user.justificatif_path ? `/uploads/${user.justificatif_path}` : null
+                justificatif_url: justificatif_url
             }
         });
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: 'Erreur récupération infos justificatif' });
+        console.error('Erreur lors de la récupération des informations du justificatif:', err);
+        res.status(500).json({ 
+            message: 'Erreur lors de la récupération des informations du justificatif',
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 };
 

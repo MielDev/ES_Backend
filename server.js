@@ -1,17 +1,23 @@
 require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
+const path = require('path');
+const fs = require('fs');
 const { sequelize } = require('./models');
 
 const app = express();
 
 // Configuration CORS
 const corsOptions = {
-    origin: ['https://app.episoletudiantedumans.fr', 'http://localhost:4200'],
+    origin: [
+        'https://app.episoletudiantedumans.fr', 
+        'http://localhost:4200',
+        'http://api.episoletudiantedumans.fr'
+    ],
     credentials: true,
-    methods: ['GET', 'POST', 'PATCH', 'PUT', 'DELETE', 'OPTIONS'],
+    methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'Origin'],
-    exposedHeaders: ['Content-Range', 'X-Content-Range', 'Content-Disposition'],
+    exposedHeaders: ['Content-Range', 'X-Content-Range', 'Content-Disposition', 'Content-Length'],
     optionsSuccessStatus: 200
 };
 
@@ -21,14 +27,34 @@ app.use(cors(corsOptions));
 // Gestion des requêtes OPTIONS (preflight)
 app.use((req, res, next) => {
     if (req.method === 'OPTIONS') {
-        res.header('Access-Control-Allow-Origin', req.headers.origin || '*');
-        res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, DELETE, OPTIONS');
-        res.header('Access-Control-Allow-Headers', req.headers['access-control-request-headers'] || '*');
+        res.header('Access-Control-Allow-Origin', req.headers.origin || corsOptions.origin);
+        res.header('Access-Control-Allow-Methods', corsOptions.methods.join(','));
+        res.header('Access-Control-Allow-Headers', req.headers['access-control-request-headers'] || corsOptions.allowedHeaders.join(','));
         res.header('Access-Control-Allow-Credentials', 'true');
+        res.header('Access-Control-Expose-Headers', corsOptions.exposedHeaders.join(','));
         return res.sendStatus(200);
     }
     next();
 });
+
+// Servir les fichiers statiques du dossier uploads
+const uploadsDir = path.join(__dirname, 'uploads');
+if (!fs.existsSync(uploadsDir)) {
+    fs.mkdirSync(uploadsDir, { recursive: true });
+}
+app.use('/uploads', express.static(uploadsDir, {
+    setHeaders: (res, path) => {
+        // Définir les en-têtes CORS pour les fichiers statiques
+        res.header('Access-Control-Allow-Origin', corsOptions.origin.join(','));
+        res.header('Access-Control-Allow-Credentials', 'true');
+        
+        // Définir le type MIME correct pour les fichiers PDF
+        if (path.endsWith('.pdf')) {
+            res.setHeader('Content-Type', 'application/pdf');
+            res.setHeader('Content-Disposition', 'inline; filename="' + path.basename(path) + '"');
+        }
+    }
+}));
 
 // Middleware pour parser JSON et URL-encoded
 app.use(express.json());
