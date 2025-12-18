@@ -39,15 +39,30 @@ if (!fs.existsSync(uploadsDir)) {
     fs.mkdirSync(uploadsDir, { recursive: true });
 }
 app.use('/uploads', express.static(uploadsDir, {
-    setHeaders: (res, path) => {
-        // Définir les en-têtes CORS pour les fichiers statiques
-        res.header('Access-Control-Allow-Origin', corsOptions.origin.join(','));
-        res.header('Access-Control-Allow-Credentials', 'true');
+    setHeaders: (res, filePath) => {
+        const origin = res.req.headers.origin;
         
-        // Définir le type MIME correct pour les fichiers PDF
-        if (path.endsWith('.pdf')) {
+        // Set CORS headers
+        if (corsOptions.origin.includes(origin)) {
+            res.setHeader('Access-Control-Allow-Origin', origin);
+        }
+        
+        res.setHeader('Access-Control-Allow-Credentials', 'true');
+        
+        // Allow embedding in iframe
+        res.setHeader('X-Frame-Options', 'ALLOWALL');
+        res.setHeader(
+            'Content-Security-Policy',
+            "frame-ancestors https://app.episoletudiantedumans.fr http://localhost:4200"
+        );
+        
+        // Set PDF-specific headers
+        if (filePath.endsWith('.pdf')) {
             res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader('Content-Disposition', 'inline; filename="' + path.basename(path) + '"');
+            res.setHeader(
+                'Content-Disposition',
+                `inline; filename="${path.basename(filePath)}"`
+            );
         }
     }
 }));
