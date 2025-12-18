@@ -131,8 +131,18 @@ exports.bookAppointment = async (req, res) => {
 
         res.status(201).json(appointment);
     } catch (err) {
-        console.error(err);
-        res.status(500).json({ message: 'Erreur réservation' });
+        console.error('Erreur lors de la réservation:', {
+            error: err,
+            message: err.message,
+            stack: err.stack,
+            userId: req.user?.id,
+            intervalSlotId: req.body.intervalSlotId,
+            timestamp: new Date().toISOString()
+        });
+        res.status(500).json({ 
+            message: 'Erreur lors de la réservation',
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
     }
 };
 
