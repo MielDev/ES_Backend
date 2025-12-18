@@ -49,11 +49,17 @@ app.use('/uploads', express.static(uploadsDir, {
         
         res.setHeader('Access-Control-Allow-Credentials', 'true');
         
-        // Allow embedding in iframe
+        // Allow embedding in iframe and set permissions
         res.setHeader('X-Frame-Options', 'ALLOWALL');
-        res.setHeader(
-            'Content-Security-Policy',
-            "frame-ancestors https://app.episoletudiantedumans.fr http://localhost:4200"
+        res.setHeader('Content-Security-Policy', 
+            `frame-ancestors https://app.episoletudiantedumans.fr http://localhost:4200; ` +
+            `default-src 'self' data: blob:; ` +
+            `script-src 'self' 'unsafe-inline' 'unsafe-eval'; ` +
+            `style-src 'self' 'unsafe-inline';`
+        );
+        res.setHeader('Permissions-Policy', 
+            'fullscreen=(self "https://app.episoletudiantedumans.fr" "http://localhost:4200"), ' +
+            'display-capture=(self "https://app.episoletudiantedumans.fr" "http://localhost:4200")'
         );
         
         // Set PDF-specific headers
