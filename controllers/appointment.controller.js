@@ -26,7 +26,12 @@ exports.bookAppointment = async (req, res) => {
         // Vérifier si l'utilisateur a déjà un RDV dans la même semaine
         const userAppointments = await Appointment.findAll({
             where: { userId, status: 'confirmé' },
-            include: [{ model: IntervalSlot, include: [Slot] }]
+            include: [{
+                model: IntervalSlot,
+                include: [Slot],
+                required: true, // Ne retourne que les rendez-vous avec un IntervalSlot valide
+                attributes: ['date']
+            }]
         });
 
         // Calculer le début et la fin de la semaine du slot
@@ -41,6 +46,7 @@ exports.bookAppointment = async (req, res) => {
 
         // Vérifier si l'utilisateur a déjà un RDV confirmé dans cette semaine
         const hasConfirmedAppointmentThisWeek = userAppointments.some(appt => {
+            if (!appt.intervalSlot || !appt.intervalSlot.date) return false;
             const apptDate = new Date(appt.intervalSlot.date);
             return apptDate >= startOfWeek && apptDate <= endOfWeek;
         });
