@@ -489,14 +489,14 @@ exports.validateStudentJustificatif = async (req, res) => {
         const user = await User.findByPk(id);
         if (!user) return res.status(404).json({ message: 'Utilisateur non trouvé' });
 
-        if (!['validé', 'refusé'].includes(status)) {
-            return res.status(400).json({ message: 'Statut invalide' });
+        if (!['validé', 'refusé', 'en_attente'].includes(status)) {
+            return res.status(400).json({ message: 'Statut invalide. Doit être "validé", "refusé" ou "en attente"' });
         }
 
         await user.update({
             justificatif_status: status,
             justificatif_commentaire: commentaire || null,
-            isActive: status === 'validé' // Activer l'utilisateur si justificatif validé
+            isActive: status === 'validé' // Activer l'utilisateur uniquement si le statut est 'validé'
         });
 
         res.json({
