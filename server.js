@@ -86,6 +86,7 @@ const slotRoutes = require('./routes/slot.routes');
 const apptRoutes = require('./routes/appointment.routes');
 const adminRoutes = require('./routes/admin.routes');
 const paymentRoutes = require('./routes/payment.routes');
+const statsRoutes = require('./routes/stats.routes');
 
 // Routes API
 app.use('/api/auth', authRoutes);
@@ -94,6 +95,7 @@ app.use('/api/slots', slotRoutes);
 app.use('/api/appointments', apptRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api', paymentRoutes);
+app.use('/api/stats', statsRoutes);
 
 // Gestion des erreurs globales
 app.use((err, req, res, next) => {
