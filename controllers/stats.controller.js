@@ -106,6 +106,76 @@ const getAdminDashboardStats = async (req, res) => {
     }
 };
 
+// Récupère les statistiques mensuelles
+const getMonthlyStats = async (req, res) => {
+    try {
+        const monthlyStats = await sequelize.query(
+            `SELECT 
+                DATE_FORMAT(date, '%Y-%m') as month,
+                COUNT(*) as total_appointments,
+                SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed,
+                SUM(CASE WHEN status = 'cancelled' THEN 1 ELSE 0 END) as cancelled
+            FROM appointments
+            WHERE date >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+            GROUP BY DATE_FORMAT(date, '%Y-%m')
+            ORDER BY month ASC`,
+            { type: QueryTypes.SELECT }
+        );
+
+        res.json({
+            success: true,
+            data: monthlyStats.map(stat => ({
+                month: stat.month,
+                total: parseInt(stat.total_appointments),
+                completed: parseInt(stat.completed),
+                cancelled: parseInt(stat.cancelled)
+            }))
+        });
+    } catch (error) {
+        console.error('Erreur lors de la récupération des statistiques mensuelles:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erreur lors de la récupération des statistiques mensuelles',
+            error: process.env.NODE_ENV === 'development' ? error.message : {}
+        });
+    }
+};
+
+// Récupère les statistiques par pays d'origine des étudiants
+const getStatsByCountry = async (req, res) => {
+    try {
+        const countriesStats = await sequelize.query(
+            `SELECT 
+                country,
+                COUNT(*) as count,
+                ROUND((COUNT(*) * 100.0) / (SELECT COUNT(*) FROM students), 1) as percentage
+            FROM students
+            WHERE country IS NOT NULL
+            GROUP BY country
+            ORDER BY count DESC`,
+            { type: QueryTypes.SELECT }
+        );
+
+        res.json({
+            success: true,
+            data: countriesStats.map(stat => ({
+                country: stat.country,
+                count: parseInt(stat.count),
+                percentage: parseFloat(stat.percentage)
+            }))
+        });
+    } catch (error) {
+        console.error('Erreur lors de la récupération des statistiques par pays:', error);
+        res.status(500).json({
+            success: false,
+            message: 'Erreur lors de la récupération des statistiques par pays',
+            error: process.env.NODE_ENV === 'development' ? error.message : {}
+        });
+    }
+};
+
 module.exports = {
-    getAdminDashboardStats
+    getAdminDashboardStats,
+    getMonthlyStats,
+    getStatsByCountry
 };
