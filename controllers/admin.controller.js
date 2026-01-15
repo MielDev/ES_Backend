@@ -6,22 +6,28 @@ const multer = require('multer');
 // Marquer les rendez-vous non validés comme manqués
 exports.markMissedAppointments = async (req, res) => {
     console.log('Début de la fonction markMissedAppointments');
-    console.log('Op est défini ?', !!Op);
-    console.log('Op.lt est défini ?', Op && Op.lt);
+    
+    // Vérification de l'opérateur Sequelize
+    if (!Op || !Op.lt) {
+        console.error('Opérateur Sequelize non disponible');
+        return res.status(500).json({
+            success: false,
+            message: 'Erreur de configuration du serveur'
+        });
+    }
 
     const transaction = await sequelize.transaction();
     try {
-        const now = new Date();
-        const today = now.toISOString().split('T')[0];
+        const today = new Date().toISOString().split('T')[0];
         console.log('Date du jour pour la comparaison:', today);
 
         // 1. Trouver les rendez-vous non validés dont la date est passée
-        // Utilisation d'une requête brute pour éviter les problèmes avec Op
         const appointments = await sequelize.query(
-            'SELECT * FROM `Appointments` ' +
-            'WHERE status = "confirmé" ' +
-            'AND valide_par_admin = 0 ' +
-            'AND date_rdv < :today',
+            `SELECT * FROM Appointments 
+             WHERE status = 'confirmé' 
+             AND valide_par_admin = 0 
+             AND date_rdv < :today
+             AND deletedAt IS NULL`,  // Exclure les rendez-vous supprimés logiquement
             {
                 replacements: { today },
                 type: sequelize.QueryTypes.SELECT,
@@ -40,41 +46,43 @@ exports.markMissedAppointments = async (req, res) => {
             });
         }
 
-        if (appointments.length === 0) {
+        // 2. Récupérer les IDs des créneaux à désactiver (avec déduplication)
+        const slotIds = [...new Set(appointments.map(appt => appt.slot_id).filter(Boolean))];
+        const appointmentIds = appointments.map(a => a.id);
+
+        if (appointmentIds.length === 0) {
             await transaction.commit();
             return res.json({
                 success: true,
-                message: 'Aucun rendez-vous à marquer comme manqué',
+                message: 'Aucun ID de rendez-vous valide trouvé',
                 count: 0
             });
         }
 
-        // 2. Récupérer les IDs des créneaux à désactiver
-        const slotIds = [...new Set(appointments.map(appt => appt.slot_id))];
-        const appointmentIds = appointments.map(a => a.id);
-
-        // 3. Mettre à jour les rendez-vous comme manqués avec une requête brute
+        // 3. Mettre à jour les rendez-vous comme manqués
         await sequelize.query(
-            'UPDATE `Appointments` ' +
-            'SET status = "manqué", ' +
-            'updatedAt = NOW() ' +
-            'WHERE id IN (?)',
+            `UPDATE Appointments 
+             SET status = 'manqué', 
+                 updatedAt = NOW() 
+             WHERE id IN (:appointmentIds)
+             AND deletedAt IS NULL`,  // Sécurité supplémentaire
             {
-                replacements: [appointmentIds],
+                replacements: { appointmentIds },
                 type: sequelize.QueryTypes.UPDATE,
                 transaction
             }
         );
 
-        // 4. Désactiver les créneaux associés
+        // 4. Désactiver les créneaux associés (s'ils existent)
         if (slotIds.length > 0) {
             await sequelize.query(
-                'UPDATE `Slots` ' +
-                'SET isActive = 0, ' +
-                'updatedAt = NOW() ' +
-                'WHERE id IN (?)',
+                `UPDATE Slots 
+                 SET isActive = 0, 
+                     updatedAt = NOW() 
+                 WHERE id IN (:slotIds)
+                 AND deletedAt IS NULL`,  // Sécurité supplémentaire
                 {
-                    replacements: [slotIds],
+                    replacements: { slotIds },
                     type: sequelize.QueryTypes.UPDATE,
                     transaction
                 }
@@ -85,17 +93,18 @@ exports.markMissedAppointments = async (req, res) => {
 
         res.json({
             success: true,
-            message: `${appointments.length} rendez-vous ont été marqués comme manqués et leurs créneaux désactivés`,
+            message: `${appointments.length} rendez-vous ont été marqués comme manqués${slotIds.length > 0 ? ' et leurs créneaux désactivés' : ''}`,
             count: appointments.length,
             slotsUpdated: slotIds.length
         });
+
     } catch (err) {
         await transaction.rollback();
         console.error('Erreur lors du marquage des rendez-vous manqués:', err);
         res.status(500).json({
             success: false,
             message: 'Erreur lors du marquage des rendez-vous manqués',
-            error: err.message
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
         });
     }
 };
