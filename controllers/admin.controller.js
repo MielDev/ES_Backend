@@ -8,15 +8,6 @@ const multer = require('multer');
 exports.markMissedAppointments = async (req, res) => {
     console.log('=== DÉBUT CLÔTURE JOURNÉE ===');
 
-    // ❌ RETIRER CETTE PARTIE QUI BLOQUE TOUT
-    // if (!Op || !Op.lt) {
-    //     console.error('Opérateur Sequelize non disponible');
-    //     return res.status(500).json({
-    //         success: false,
-    //         message: 'Erreur de configuration du serveur'
-    //     });
-    // }
-
     let transaction;
     try {
         transaction = await sequelize.transaction();
@@ -29,6 +20,7 @@ exports.markMissedAppointments = async (req, res) => {
         console.log('Date de comparaison:', todayStr);
 
         // 1. Trouver les rendez-vous non validés dont la date est passée
+        // ✅ RETIRER deletedAt IS NULL
         const appointments = await sequelize.query(
             `SELECT 
                 id,
@@ -42,8 +34,7 @@ exports.markMissedAppointments = async (req, res) => {
              FROM Appointments 
              WHERE status = 'confirmé' 
              AND (valide_par_admin = 0 OR valide_par_admin = false OR valide_par_admin IS NULL)
-             AND DATE(date_rdv) < :today
-             AND deletedAt IS NULL`,
+             AND DATE(date_rdv) < :today`,
             {
                 replacements: { today: todayStr },
                 type: sequelize.QueryTypes.SELECT,
@@ -80,12 +71,12 @@ exports.markMissedAppointments = async (req, res) => {
         console.log('IDs slots à désactiver:', slotIds);
 
         // 3. Mettre à jour les rendez-vous comme manqués
+        // ✅ RETIRER deletedAt IS NULL
         await sequelize.query(
             `UPDATE Appointments 
              SET status = 'manqué', 
                  updatedAt = NOW() 
-             WHERE id IN (:appointmentIds)
-             AND deletedAt IS NULL`,
+             WHERE id IN (:appointmentIds)`,
             {
                 replacements: { appointmentIds },
                 type: sequelize.QueryTypes.UPDATE,
@@ -98,12 +89,12 @@ exports.markMissedAppointments = async (req, res) => {
         // 4. Désactiver les créneaux associés
         let slotsUpdatedCount = 0;
         if (slotIds.length > 0) {
+            // ✅ RETIRER deletedAt IS NULL
             await sequelize.query(
                 `UPDATE Slots 
                  SET isActive = 0, 
                      updatedAt = NOW() 
-                 WHERE id IN (:slotIds)
-                 AND deletedAt IS NULL`,
+                 WHERE id IN (:slotIds)`,
                 {
                     replacements: { slotIds },
                     type: sequelize.QueryTypes.UPDATE,
