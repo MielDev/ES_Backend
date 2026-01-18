@@ -29,7 +29,7 @@ exports.markMissedAppointments = async (req, res) => {
                 heure_debut,
                 heure_fin,
                 valide_par_admin,
-                slotId,
+                intervalSlotId,
                 userId
              FROM Appointments 
              WHERE status = 'confirmé' 
@@ -61,7 +61,7 @@ exports.markMissedAppointments = async (req, res) => {
         // 2. Récupérer les IDs
         const slotIds = [...new Set(
             appointments
-                .map(appt => appt.slotId)
+                .map(appt => appt.intervalSlotId)
                 .filter(Boolean)
         )];
 
