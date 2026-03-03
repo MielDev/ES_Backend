@@ -4,32 +4,39 @@ const fs = require('fs');
 const multer = require('multer');
 
 // Marquer les rendez-vous non validés comme manqués
+// Marquer les rendez-vous non validés comme manqués
 exports.markMissedAppointments = async (req, res) => {
-    console.log('Début de la fonction markMissedAppointments');
-    
-    // Vérification de l'opérateur Sequelize
-    if (!Op || !Op.lt) {
-        console.error('Opérateur Sequelize non disponible');
-        return res.status(500).json({
-            success: false,
-            message: 'Erreur de configuration du serveur'
-        });
-    }
+    console.log('=== DÉBUT CLÔTURE JOURNÉE ===');
 
-    const transaction = await sequelize.transaction();
+    let transaction;
     try {
-        const today = new Date().toISOString().split('T')[0];
-        console.log('Date du jour pour la comparaison:', today);
+        transaction = await sequelize.transaction();
+
+        const now = new Date();
+        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+        const todayStr = today.toISOString().split('T')[0];
+
+        console.log('Date actuelle:', now.toISOString());
+        console.log('Date de comparaison:', todayStr);
 
         // 1. Trouver les rendez-vous non validés dont la date est passée
+        // ✅ RETIRER deletedAt IS NULL
         const appointments = await sequelize.query(
-            `SELECT * FROM Appointments 
+            `SELECT 
+                id,
+                status,
+                date_rdv,
+                heure_debut,
+                heure_fin,
+                valide_par_admin,
+                intervalSlotId,
+                userId
+             FROM Appointments 
              WHERE status = 'confirmé' 
-             AND valide_par_admin = 0 
-             AND date_rdv < :today
-             AND deletedAt IS NULL`,  // Exclure les rendez-vous supprimés logiquement
+             AND (valide_par_admin = 0 OR valide_par_admin = false OR valide_par_admin IS NULL)
+             AND DATE(date_rdv) < :today`,
             {
-                replacements: { today },
+                replacements: { today: todayStr },
                 type: sequelize.QueryTypes.SELECT,
                 transaction
             }
@@ -37,35 +44,39 @@ exports.markMissedAppointments = async (req, res) => {
 
         console.log(`Nombre de rendez-vous trouvés: ${appointments.length}`);
 
+        if (appointments.length > 0) {
+            console.log('Premiers rendez-vous:', appointments.slice(0, 3));
+        }
+
         if (appointments.length === 0) {
             await transaction.commit();
             return res.json({
                 success: true,
                 message: 'Aucun rendez-vous à marquer comme manqué',
-                count: 0
+                count: 0,
+                slotsUpdated: 0
             });
         }
 
-        // 2. Récupérer les IDs des créneaux à désactiver (avec déduplication)
-        const slotIds = [...new Set(appointments.map(appt => appt.slot_id).filter(Boolean))];
+        // 2. Récupérer les IDs
+        const slotIds = [...new Set(
+            appointments
+                .map(appt => appt.intervalSlotId)
+                .filter(Boolean)
+        )];
+
         const appointmentIds = appointments.map(a => a.id);
 
-        if (appointmentIds.length === 0) {
-            await transaction.commit();
-            return res.json({
-                success: true,
-                message: 'Aucun ID de rendez-vous valide trouvé',
-                count: 0
-            });
-        }
+        console.log('IDs rendez-vous à marquer:', appointmentIds);
+        console.log('IDs slots à désactiver:', slotIds);
 
         // 3. Mettre à jour les rendez-vous comme manqués
+        // ✅ RETIRER deletedAt IS NULL
         await sequelize.query(
             `UPDATE Appointments 
              SET status = 'manqué', 
                  updatedAt = NOW() 
-             WHERE id IN (:appointmentIds)
-             AND deletedAt IS NULL`,  // Sécurité supplémentaire
+             WHERE id IN (:appointmentIds)`,
             {
                 replacements: { appointmentIds },
                 type: sequelize.QueryTypes.UPDATE,
@@ -73,34 +84,44 @@ exports.markMissedAppointments = async (req, res) => {
             }
         );
 
-        // 4. Désactiver les créneaux associés (s'ils existent)
+        console.log(`${appointments.length} rendez-vous marqués comme manqués`);
+
+        // 4. Désactiver les créneaux associés
+        let slotsUpdatedCount = 0;
         if (slotIds.length > 0) {
+            // ✅ RETIRER deletedAt IS NULL
             await sequelize.query(
                 `UPDATE Slots 
                  SET isActive = 0, 
                      updatedAt = NOW() 
-                 WHERE id IN (:slotIds)
-                 AND deletedAt IS NULL`,  // Sécurité supplémentaire
+                 WHERE id IN (:slotIds)`,
                 {
                     replacements: { slotIds },
                     type: sequelize.QueryTypes.UPDATE,
                     transaction
                 }
             );
+            slotsUpdatedCount = slotIds.length;
+            console.log(`${slotsUpdatedCount} créneaux désactivés`);
         }
 
         await transaction.commit();
+        console.log('=== CLÔTURE RÉUSSIE ===');
 
         res.json({
             success: true,
-            message: `${appointments.length} rendez-vous ont été marqués comme manqués${slotIds.length > 0 ? ' et leurs créneaux désactivés' : ''}`,
+            message: `${appointments.length} rendez-vous ont été marqués comme manqués`,
             count: appointments.length,
-            slotsUpdated: slotIds.length
+            slotsUpdated: slotsUpdatedCount
         });
 
     } catch (err) {
-        await transaction.rollback();
-        console.error('Erreur lors du marquage des rendez-vous manqués:', err);
+        if (transaction) await transaction.rollback();
+
+        console.error('=== ERREUR CLÔTURE ===');
+        console.error('Message:', err.message);
+        console.error('Stack:', err.stack);
+
         res.status(500).json({
             success: false,
             message: 'Erreur lors du marquage des rendez-vous manqués',
@@ -566,6 +587,83 @@ exports.getStudentJustificatifInfo = async (req, res) => {
         console.error('Erreur lors de la récupération des informations du justificatif:', err);
         res.status(500).json({ 
             message: 'Erreur lors de la récupération des informations du justificatif',
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
+    }
+};
+
+// Suppression définitive d'un utilisateur
+exports.deleteUser = async (req, res) => {
+    const transaction = await sequelize.transaction();
+    try {
+        const { id } = req.params;
+        
+        // Vérifier si l'utilisateur existe
+        const user = await User.findByPk(id, {
+            include: [
+                { model: Appointment, as: 'appointments' },
+                { model: Payment, as: 'payments' }
+            ],
+            transaction
+        });
+        
+        if (!user) {
+            await transaction.rollback();
+            return res.status(404).json({ message: 'Utilisateur non trouvé' });
+        }
+        
+        // Empêcher la suppression d'un admin
+        if (user.role === 'admin') {
+            await transaction.rollback();
+            return res.status(403).json({ message: 'Impossible de supprimer un compte administrateur' });
+        }
+        
+        // Supprimer le fichier de justificatif s'il existe
+        if (user.justificatif_path) {
+            const filePath = path.join(__dirname, '../uploads', user.justificatif_path);
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
+        }
+        
+        // Supprimer les rendez-vous associés
+        await Appointment.destroy({
+            where: { userId: id },
+            force: true, // Suppression définitive
+            transaction
+        });
+        
+        // Supprimer les paiements associés
+        await Payment.destroy({
+            where: { userId: id },
+            force: true, // Suppression définitive
+            transaction
+        });
+        
+        // Supprimer définitivement l'utilisateur
+        await User.destroy({
+            where: { id: id },
+            force: true, // Suppression définitive (pas de soft delete)
+            transaction
+        });
+        
+        await transaction.commit();
+        
+        res.json({ 
+            message: 'Utilisateur et toutes ses données ont été supprimés définitivement',
+            userDeleted: {
+                id: user.id,
+                nom: user.nom,
+                prenom: user.prenom,
+                email: user.email
+            }
+        });
+        
+    } catch (err) {
+        await transaction.rollback();
+        console.error('Erreur lors de la suppression de l\'utilisateur:', err);
+        res.status(500).json({ 
+            message: 'Erreur lors de la suppression de l\'utilisateur',
             error: process.env.NODE_ENV === 'development' ? err.message : undefined
         });
     }
