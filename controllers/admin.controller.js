@@ -1,4 +1,4 @@
-const { sequelize, Op, AdminConfig, User, Appointment, Payment, Slot } = require('../models');
+const { sequelize, Op, AdminConfig, User, Appointment, Payment, Slot, Affiche } = require('../models');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
@@ -571,6 +571,83 @@ exports.getStudentJustificatifInfo = async (req, res) => {
     }
 };
 
+// Suppression définitive d'un utilisateur
+exports.deleteUser = async (req, res) => {
+    const transaction = await sequelize.transaction();
+    try {
+        const { id } = req.params;
+        
+        // Vérifier si l'utilisateur existe
+        const user = await User.findByPk(id, {
+            include: [
+                { model: Appointment, as: 'appointments' },
+                { model: Payment, as: 'payments' }
+            ],
+            transaction
+        });
+        
+        if (!user) {
+            await transaction.rollback();
+            return res.status(404).json({ message: 'Utilisateur non trouvé' });
+        }
+        
+        // Empêcher la suppression d'un admin
+        if (user.role === 'admin') {
+            await transaction.rollback();
+            return res.status(403).json({ message: 'Impossible de supprimer un compte administrateur' });
+        }
+        
+        // Supprimer le fichier de justificatif s'il existe
+        if (user.justificatif_path) {
+            const filePath = path.join(__dirname, '../uploads', user.justificatif_path);
+            if (fs.existsSync(filePath)) {
+                fs.unlinkSync(filePath);
+            }
+        }
+        
+        // Supprimer les rendez-vous associés
+        await Appointment.destroy({
+            where: { userId: id },
+            force: true, // Suppression définitive
+            transaction
+        });
+        
+        // Supprimer les paiements associés
+        await Payment.destroy({
+            where: { userId: id },
+            force: true, // Suppression définitive
+            transaction
+        });
+        
+        // Supprimer définitivement l'utilisateur
+        await User.destroy({
+            where: { id: id },
+            force: true, // Suppression définitive (pas de soft delete)
+            transaction
+        });
+        
+        await transaction.commit();
+        
+        res.json({ 
+            message: 'Utilisateur et toutes ses données ont été supprimés définitivement',
+            userDeleted: {
+                id: user.id,
+                nom: user.nom,
+                prenom: user.prenom,
+                email: user.email
+            }
+        });
+        
+    } catch (err) {
+        await transaction.rollback();
+        console.error('Erreur lors de la suppression de l\'utilisateur:', err);
+        res.status(500).json({ 
+            message: 'Erreur lors de la suppression de l\'utilisateur',
+            error: process.env.NODE_ENV === 'development' ? err.message : undefined
+        });
+    }
+};
+
 // Récupérer les rendez-vous non validés
 exports.getUnvalidatedAppointments = async (req, res) => {
     try {
@@ -615,5 +692,142 @@ exports.getUnvalidatedAppointments = async (req, res) => {
     } catch (err) {
         console.error('Erreur lors de la récupération des rendez-vous non validés :', err);
         res.status(500).json({ message: 'Erreur lors de la récupération des rendez-vous non validés' });
+    }
+};
+
+// Gestion des affiches
+exports.getAllAffiches = async (req, res) => {
+    try {
+        const affiches = await Affiche.findAll({
+            order: [['priorite', 'DESC'], ['createdAt', 'DESC']]
+        });
+        res.json(affiches);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Erreur récupération affiches' });
+    }
+};
+
+exports.getAfficheById = async (req, res) => {
+    try {
+        const affiche = await Affiche.findByPk(req.params.id);
+        if (!affiche) {
+            return res.status(404).json({ message: 'Affiche non trouvée' });
+        }
+        res.json(affiche);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Erreur récupération affiche' });
+    }
+};
+
+exports.createAffiche = async (req, res) => {
+    try {
+        const { titre, contenu, image_url, date_debut, date_fin, priorite } = req.body;
+        
+        const affiche = await Affiche.create({
+            titre,
+            contenu,
+            image_url,
+            date_debut,
+            date_fin,
+            priorite: priorite || 0
+        });
+        
+        res.status(201).json(affiche);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Erreur création affiche' });
+    }
+};
+
+exports.updateAffiche = async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { titre, contenu, image_url, date_debut, date_fin, priorite, is_active } = req.body;
+        
+        const affiche = await Affiche.findByPk(id);
+        if (!affiche) {
+            return res.status(404).json({ message: 'Affiche non trouvée' });
+        }
+        
+        await affiche.update({
+            titre: titre !== undefined ? titre : affiche.titre,
+            contenu: contenu !== undefined ? contenu : affiche.contenu,
+            image_url: image_url !== undefined ? image_url : affiche.image_url,
+            date_debut: date_debut !== undefined ? date_debut : affiche.date_debut,
+            date_fin: date_fin !== undefined ? date_fin : affiche.date_fin,
+            priorite: priorite !== undefined ? priorite : affiche.priorite,
+            is_active: is_active !== undefined ? is_active : affiche.is_active
+        });
+        
+        res.json(affiche);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Erreur mise à jour affiche' });
+    }
+};
+
+exports.deleteAffiche = async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        const affiche = await Affiche.findByPk(id);
+        if (!affiche) {
+            return res.status(404).json({ message: 'Affiche non trouvée' });
+        }
+        
+        await affiche.destroy();
+        res.json({ message: 'Affiche supprimée avec succès' });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Erreur suppression affiche' });
+    }
+};
+
+exports.toggleAfficheActive = async (req, res) => {
+    try {
+        const { id } = req.params;
+        
+        const affiche = await Affiche.findByPk(id);
+        if (!affiche) {
+            return res.status(404).json({ message: 'Affiche non trouvée' });
+        }
+        
+        await affiche.update({ is_active: !affiche.is_active });
+        res.json({ 
+            message: `Affiche ${affiche.is_active ? 'activée' : 'désactivée'}`, 
+            affiche 
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Erreur modification statut affiche' });
+    }
+};
+
+// Récupérer les affiches actives pour les utilisateurs
+exports.getActiveAffiches = async (req, res) => {
+    try {
+        const today = new Date().toISOString().split('T')[0];
+        
+        const affiches = await Affiche.findAll({
+            where: {
+                is_active: true,
+                [Op.or]: [
+                    { date_debut: null },
+                    { date_debut: { [Op.lte]: today } }
+                ],
+                [Op.or]: [
+                    { date_fin: null },
+                    { date_fin: { [Op.gte]: today } }
+                ]
+            },
+            order: [['priorite', 'DESC'], ['createdAt', 'DESC']]
+        });
+        
+        res.json(affiches);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Erreur récupération affiches actives' });
     }
 };

@@ -1,10 +1,16 @@
-require('dotenv').config();
+require('dotenv').config({ path: '../.env' });
 const sequelize = require('../config/db');
 const bcrypt = require('bcryptjs');
 const { User, Slot, AdminConfig, Payment, Appointment } = require('../models');
 
 async function seed() {
+    // Désactiver les vérifications de clés étrangères pour pouvoir supprimer les tables
+    await sequelize.query('SET FOREIGN_KEY_CHECKS = 0', { raw: true });
+    
     await sequelize.sync({ force: true }); // attention: supprime les données existantes
+    
+    // Réactiver les vérifications de clés étrangères
+    await sequelize.query('SET FOREIGN_KEY_CHECKS = 1', { raw: true });
 
     const hashed = await bcrypt.hash('Admin123!', 10);
     const admin = await User.create({ nom: 'Admin', prenom: 'Root', email: 'admin@medibook.local', password: hashed, role: 'admin' });
@@ -52,10 +58,10 @@ async function seed() {
 
     // Configuration admin pour les créneaux
     const configs = [
-        { jour_semaine: 'lundi', heure_debut: '08:00', heure_fin: '12:00', nombre_passages_max: 5, is_active: true },
-        { jour_semaine: 'mardi', heure_debut: '09:00', heure_fin: '16:00', nombre_passages_max: 3, is_active: true },
-        { jour_semaine: 'jeudi', heure_debut: '10:00', heure_fin: '15:00', nombre_passages_max: 4, is_active: true },
-        { jour_semaine: 'vendredi', heure_debut: '08:30', heure_fin: '11:30', nombre_passages_max: 2, is_active: false }, // désactivé
+        { date_specifique: '2025-01-06', heure_debut: '08:00', heure_fin: '12:00' }, // lundi
+        { date_specifique: '2025-01-07', heure_debut: '09:00', heure_fin: '16:00' }, // mardi
+        { date_specifique: '2025-01-09', heure_debut: '10:00', heure_fin: '15:00' }, // jeudi
+        { date_specifique: '2025-01-10', heure_debut: '08:30', heure_fin: '11:30' }, // vendredi
     ];
 
     for (const config of configs) {
@@ -65,11 +71,11 @@ async function seed() {
 
     // Exemple de quelques slots (dates)
     const slotsData = [
-        { date: '2025-10-20', heure: '08:00:00', capacite_max: 5, places_restantes: 5 },
-        { date: '2025-10-20', heure: '09:00:00', capacite_max: 5, places_restantes: 3 },
-        { date: '2025-10-21', heure: '10:00:00', capacite_max: 3, places_restantes: 3 },
-        { date: '2025-10-23', heure: '10:00:00', capacite_max: 4, places_restantes: 4 },
-        { date: '2025-10-23', heure: '11:00:00', capacite_max: 4, places_restantes: 2 },
+        { date: '2025-01-06', heure_debut: '08:00:00', heure_fin: '12:00:00', interval_minutes: 15, capacite_par_interval: 5 },
+        { date: '2025-01-06', heure_debut: '09:00:00', heure_fin: '10:00:00', interval_minutes: 15, capacite_par_interval: 3 },
+        { date: '2025-01-07', heure_debut: '10:00:00', heure_fin: '11:00:00', interval_minutes: 15, capacite_par_interval: 3 },
+        { date: '2025-01-09', heure_debut: '10:00:00', heure_fin: '12:00:00', interval_minutes: 15, capacite_par_interval: 4 },
+        { date: '2025-01-09', heure_debut: '11:00:00', heure_fin: '12:00:00', interval_minutes: 15, capacite_par_interval: 2 },
     ];
 
     for (const s of slotsData) {
@@ -79,9 +85,9 @@ async function seed() {
 
     // Exemples de rendez-vous
     const appointments = [
-        { userId: user1.id, slotId: 1, status: 'confirmé', note: 'Premier rendez-vous' },
-        { userId: user2.id, slotId: 2, status: 'annulé', note: 'Annulé par l\'utilisateur' },
-        { userId: user1.id, slotId: 3, status: 'annulé', note: 'Annulé définitivement' },
+        { userId: user1.id, date_rdv: '2025-01-06', heure_debut: '08:00:00', heure_fin: '08:15:00', status: 'confirmé', note: 'Premier rendez-vous' },
+        { userId: user2.id, date_rdv: '2025-01-06', heure_debut: '09:00:00', heure_fin: '09:15:00', status: 'annulé', note: 'Annulé par l\'utilisateur' },
+        { userId: user1.id, date_rdv: '2025-01-07', heure_debut: '10:00:00', heure_fin: '10:15:00', status: 'annulé', note: 'Annulé définitivement' },
     ];
 
     for (const appt of appointments) {

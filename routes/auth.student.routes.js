@@ -1,6 +1,7 @@
 const express = require('express');
 const router = express.Router();
 const studentCtrl = require('../controllers/auth.student.controller');
+const adminCtrl = require('../controllers/admin.controller');
 const { auth, isAdmin } = require('../middleware/auth.middleware');
 const { handleUpload } = require('../middleware/upload.middleware');
 
@@ -24,5 +25,8 @@ router.get('/reset-password/:token', studentCtrl.showResetPasswordForm);
 
 // Traiter la soumission du formulaire (POST)
 router.post('/reset-password/:token', studentCtrl.resetPassword);
+
+// Affiches actives pour les étudiants
+router.get('/affiches', adminCtrl.getActiveAffiches);
 
 module.exports = router;

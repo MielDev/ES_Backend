@@ -14,6 +14,7 @@ router.get('/users/:id', auth, isAdmin, adminCtrl.getUserById);
 router.put('/users/:id', auth, isAdmin, adminCtrl.updateUser); // Mise à jour complète
 router.patch('/users/:id/toggle-active', auth, isAdmin, adminCtrl.toggleUserActive);
 router.patch('/users/:id/passages', auth, isAdmin, adminCtrl.updateUserPassages);
+router.delete('/users/:id', auth, isAdmin, adminCtrl.deleteUser); // Suppression définitive
 
 // Validation des rendez-vous
 router.get('/appointments', auth, isAdmin, adminCtrl.getAllAppointmentsForAdmin);
@@ -26,5 +27,13 @@ router.get('/users/pending-validation', auth, isAdmin, adminCtrl.getUsersPending
 router.get('/users/:id/justificatif', auth, isAdmin, adminCtrl.getStudentJustificatifInfo);
 router.patch('/users/:id/justificatif', auth, isAdmin, adminCtrl.uploadJustificatif);
 router.patch('/users/:id/validate-justificatif', auth, isAdmin, adminCtrl.validateStudentJustificatif);
+
+// Gestion des affiches
+router.get('/affiches', auth, isAdmin, adminCtrl.getAllAffiches);
+router.get('/affiches/:id', auth, isAdmin, adminCtrl.getAfficheById);
+router.post('/affiches', auth, isAdmin, adminCtrl.createAffiche);
+router.put('/affiches/:id', auth, isAdmin, adminCtrl.updateAffiche);
+router.delete('/affiches/:id', auth, isAdmin, adminCtrl.deleteAffiche);
+router.patch('/affiches/:id/toggle-active', auth, isAdmin, adminCtrl.toggleAfficheActive);
 
 module.exports = router;
