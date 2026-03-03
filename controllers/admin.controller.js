@@ -4,6 +4,7 @@ const fs = require('fs');
 const multer = require('multer');
 
 // Marquer les rendez-vous non validés comme manqués
+// Marquer les rendez-vous non validés comme manqués
 exports.markMissedAppointments = async (req, res) => {
     console.log('=== DÉBUT CLÔTURE JOURNÉE ===');
 
@@ -635,59 +636,5 @@ exports.getUnvalidatedAppointments = async (req, res) => {
     } catch (err) {
         console.error('Erreur lors de la récupération des rendez-vous non validés :', err);
         res.status(500).json({ message: 'Erreur lors de la récupération des rendez-vous non validés' });
-    }
-};
-
-// Suppression définitive d'un utilisateur
-exports.deleteUser = async (req, res) => {
-    let transaction;
-    try {
-        const { id } = req.params;
-        
-        // Vérifier si l'utilisateur existe
-        const user = await User.findByPk(id);
-        if (!user) {
-            return res.status(404).json({ message: 'Utilisateur non trouvé' });
-        }
-
-        transaction = await sequelize.transaction();
-
-        // Supprimer le fichier de justificatif s'il existe
-        if (user.justificatif_path) {
-            const filePath = path.join(__dirname, '../uploads', user.justificatif_path);
-            if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
-            }
-        }
-
-        // Supprimer les rendez-vous associés
-        await Appointment.destroy({
-            where: { userId: id },
-            transaction
-        });
-
-        // Supprimer les paiements associés
-        await Payment.destroy({
-            where: { userId: id },
-            transaction
-        });
-
-        // Supprimer l'utilisateur
-        await user.destroy({ transaction });
-
-        await transaction.commit();
-
-        res.json({ 
-            message: 'Utilisateur et toutes ses données ont été supprimés définitivement',
-            userId: id
-        });
-
-    } catch (err) {
-        if (transaction) await transaction.rollback();
-        console.error('Erreur lors de la suppression de l\'utilisateur:', err);
-        res.status(500).json({ 
-            message: 'Erreur lors de la suppression de l\'utilisateur',
-            error: process.env.NODE_ENV === 'development' ? err.message : undefined
-        });
     }
 };

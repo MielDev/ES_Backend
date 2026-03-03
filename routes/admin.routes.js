@@ -14,7 +14,6 @@ router.get('/users/:id', auth, isAdmin, adminCtrl.getUserById);
 router.put('/users/:id', auth, isAdmin, adminCtrl.updateUser); // Mise à jour complète
 router.patch('/users/:id/toggle-active', auth, isAdmin, adminCtrl.toggleUserActive);
 router.patch('/users/:id/passages', auth, isAdmin, adminCtrl.updateUserPassages);
-router.delete('/users/:id', auth, isAdmin, adminCtrl.deleteUser); // Suppression définitive
 
 // Validation des rendez-vous
 router.get('/appointments', auth, isAdmin, adminCtrl.getAllAppointmentsForAdmin);
