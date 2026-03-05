@@ -601,85 +601,8 @@ exports.deleteUser = async (req, res) => {
         // Vérifier si l'utilisateur existe
         const user = await User.findByPk(id, {
             include: [
-                { model: Appointment, as: 'appointments' },
-                { model: Payment, as: 'payments' }
-            ],
-            transaction
-        });
-        
-        if (!user) {
-            await transaction.rollback();
-            return res.status(404).json({ message: 'Utilisateur non trouvé' });
-        }
-        
-        // Empêcher la suppression d'un admin
-        if (user.role === 'admin') {
-            await transaction.rollback();
-            return res.status(403).json({ message: 'Impossible de supprimer un compte administrateur' });
-        }
-        
-        // Supprimer le fichier de justificatif s'il existe
-        if (user.justificatif_path) {
-            const filePath = path.join(__dirname, '../uploads', user.justificatif_path);
-            if (fs.existsSync(filePath)) {
-                fs.unlinkSync(filePath);
-            }
-        }
-        
-        // Supprimer les rendez-vous associés
-        await Appointment.destroy({
-            where: { userId: id },
-            force: true, // Suppression définitive
-            transaction
-        });
-        
-        // Supprimer les paiements associés
-        await Payment.destroy({
-            where: { userId: id },
-            force: true, // Suppression définitive
-            transaction
-        });
-        
-        // Supprimer définitivement l'utilisateur
-        await User.destroy({
-            where: { id: id },
-            force: true, // Suppression définitive (pas de soft delete)
-            transaction
-        });
-        
-        await transaction.commit();
-        
-        res.json({ 
-            message: 'Utilisateur et toutes ses données ont été supprimés définitivement',
-            userDeleted: {
-                id: user.id,
-                nom: user.nom,
-                prenom: user.prenom,
-                email: user.email
-            }
-        });
-        
-    } catch (err) {
-        await transaction.rollback();
-        console.error('Erreur lors de la suppression de l\'utilisateur:', err);
-        res.status(500).json({ 
-            message: 'Erreur lors de la suppression de l\'utilisateur',
-            error: process.env.NODE_ENV === 'development' ? err.message : undefined
-        });
-    }
-};
-
-// Suppression définitive d'un utilisateur
-exports.deleteUser = async (req, res) => {
-    const transaction = await sequelize.transaction();
-    try {
-        const { id } = req.params;
-        
-        // Vérifier si l'utilisateur existe
-        const user = await User.findByPk(id, {
-            include: [
-                { model: Appointment, as: 'appointments' },
-                { model: Payment, as: 'payments' }
+                Appointment,
+                Payment
             ],
             transaction
         });
