@@ -1,7 +1,9 @@
 const express = require('express');
 const router = express.Router();
 const adminCtrl = require('../controllers/admin.controller');
-const { auth, isAdmin } = require('../middleware/auth.middleware');
+const studentCtrl = require('../controllers/auth.student.controller');
+const { auth, isAdmin, hasRole } = require('../middleware/auth.middleware');
+const { handleAfficheUpload } = require('../middleware/upload.middleware');
 
 // Configuration des créneaux
 router.get('/config', auth, isAdmin, adminCtrl.getAdminConfig);
@@ -29,9 +31,10 @@ router.patch('/users/:id/justificatif', auth, isAdmin, adminCtrl.uploadJustifica
 router.patch('/users/:id/validate-justificatif', auth, isAdmin, adminCtrl.validateStudentJustificatif);
 
 // Gestion des affiches
-router.get('/affiches', auth, isAdmin, adminCtrl.getAllAffiches);
-router.get('/affiches/:id', auth, isAdmin, adminCtrl.getAfficheById);
+router.get('/affiches', auth, hasRole('admin', 'utilisateur'), adminCtrl.getAllAffiches);
+router.get('/affiches/:id', auth, hasRole('admin', 'utilisateur'), adminCtrl.getAfficheById);
 router.post('/affiches', auth, isAdmin, adminCtrl.createAffiche);
+router.post('/affiches/upload', auth, isAdmin, handleAfficheUpload, adminCtrl.uploadAfficheImage);
 router.put('/affiches/:id', auth, isAdmin, adminCtrl.updateAffiche);
 router.delete('/affiches/:id', auth, isAdmin, adminCtrl.deleteAffiche);
 router.patch('/affiches/:id/toggle-active', auth, isAdmin, adminCtrl.toggleAfficheActive);

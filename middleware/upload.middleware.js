@@ -112,7 +112,70 @@ const handleUpload = (req, res, next) => {
     });
 };
 
+// Configuration pour les affiches
+const afficheStorage = multer.diskStorage({
+    destination: function (req, file, cb) {
+        const affichesDir = path.join(uploadsDir, 'affiches');
+        if (!fs.existsSync(affichesDir)) {
+            console.log(`Création du dossier des affiches: ${affichesDir}`);
+            fs.mkdirSync(affichesDir, { recursive: true });
+        }
+        cb(null, affichesDir);
+    },
+    filename: function (req, file, cb) {
+        const originalname = file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_');
+        const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
+        const extension = path.extname(originalname) || '';
+        const filename = `affiche-${uniqueSuffix}${extension}`.toLowerCase();
+
+        console.log(`Téléchargement de l'affiche: ${filename} (${file.mimetype}, ${(file.size / 1024 / 1024).toFixed(2)} MB)`);
+        cb(null, filename);
+    }
+});
+
+const afficheFileFilter = (req, file, cb) => {
+    const allowedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp'];
+    
+    if (allowedTypes.includes(file.mimetype)) {
+        cb(null, true);
+    } else {
+        console.error(`Type de fichier rejeté pour affiche: ${file.mimetype}`);
+        cb(new Error('Type de fichier non supporté pour l\'affiche. Seules les images (JPEG, PNG, GIF, WebP) sont acceptées.'), false);
+    }
+};
+
+const uploadAffiche = multer({
+    storage: afficheStorage,
+    limits: {
+        fileSize: 10 * 1024 * 1024, // 10MB max
+        files: 1,
+        fieldNameSize: 200,
+        fieldSize: 10 * 1024 * 1024
+    },
+    fileFilter: afficheFileFilter,
+    preservePath: true
+});
+
+const handleAfficheUpload = (req, res, next) => {
+    const uploadSingle = uploadAffiche.single('file'); // doit matcher Angular
+
+    uploadSingle(req, res, function (err) {
+        if (err instanceof multer.MulterError) {
+            const messages = {
+                LIMIT_FILE_SIZE: 'Le fichier est trop volumineux. La taille maximale autorisée est de 10 Mo.',
+                LIMIT_FILE_COUNT: 'Trop de fichiers. Un seul fichier est autorisé.',
+                LIMIT_UNEXPECTED_FILE: 'Champ de fichier incorrect. Le champ doit s\'appeler "file".'
+            };
+            return res.status(400).json({ message: messages[err.code] || 'Erreur lors du téléchargement de l\'affiche' });
+        } else if (err) {
+            return res.status(500).json({ message: 'Erreur lors du traitement de l\'affiche', error: err.message });
+        }
+        next();
+    });
+};
 module.exports = {
     upload,
-    handleUpload
+    handleUpload,
+    uploadAffiche,
+    handleAfficheUpload
 };

@@ -7,7 +7,9 @@ const { sequelize } = require('./models');
 
 const app = express();
 
+// -----------------------------
 // Configuration CORS
+// -----------------------------
 const corsOptions = {
     origin: ['https://app.episoletudiantedumans.fr', 'http://localhost:4200', 'http://192.168.1.148:4200'],
     credentials: true,
@@ -17,7 +19,6 @@ const corsOptions = {
     optionsSuccessStatus: 200
 };
 
-// Middleware CORS (doit être **avant** toutes les routes)
 app.use(cors(corsOptions));
 
 // Gestion des requêtes OPTIONS (preflight)
@@ -33,53 +34,50 @@ app.use((req, res, next) => {
     next();
 });
 
-// Servir les fichiers statiques du dossier uploads
+// -----------------------------
+// Dossier uploads
+// -----------------------------
 const uploadsDir = path.join(__dirname, 'uploads');
-if (!fs.existsSync(uploadsDir)) {
-    fs.mkdirSync(uploadsDir, { recursive: true });
-}
+if (!fs.existsSync(uploadsDir)) fs.mkdirSync(uploadsDir, { recursive: true });
+
 app.use('/uploads', express.static(uploadsDir, {
     setHeaders: (res, filePath) => {
         const origin = res.req.headers.origin;
-        
-        // Set CORS headers
         if (corsOptions.origin.includes(origin)) {
             res.setHeader('Access-Control-Allow-Origin', origin);
         }
-        
         res.setHeader('Access-Control-Allow-Credentials', 'true');
-        
-        // Allow embedding in iframe and set permissions
         res.setHeader('X-Frame-Options', 'ALLOWALL');
-        res.setHeader('Content-Security-Policy', 
+        res.setHeader('Content-Security-Policy',
             `frame-ancestors https://app.episoletudiantedumans.fr http://localhost:4200; ` +
-            `default-src 'self' data: blob:; ` +
-            `script-src 'self' 'unsafe-inline' 'unsafe-eval'; ` +
-            `style-src 'self' 'unsafe-inline';`
+            `default-src 'self' data: blob:; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline';`
         );
-        res.setHeader('Permissions-Policy', 
+        res.setHeader('Permissions-Policy',
             'fullscreen=(self "https://app.episoletudiantedumans.fr" "http://localhost:4200"), ' +
             'display-capture=(self "https://app.episoletudiantedumans.fr" "http://localhost:4200")'
         );
-        
-        // Set PDF-specific headers
+
         if (filePath.endsWith('.pdf')) {
             res.setHeader('Content-Type', 'application/pdf');
-            res.setHeader(
-                'Content-Disposition',
-                `inline; filename="${path.basename(filePath)}"`
-            );
+            res.setHeader('Content-Disposition', `inline; filename="${path.basename(filePath)}"`);
         }
     }
 }));
 
-// Middleware pour parser JSON et URL-encoded
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+// -----------------------------
+// Middleware JSON et URL-encoded
+// -----------------------------
+// ⚠️ Important : ne pas parser les multipart/form-data
+app.use((req, res, next) => {
+    if (req.is('multipart/form-data')) return next();
+    express.json({ limit: '50mb' })(req, res, () => {
+        express.urlencoded({ extended: true, limit: '50mb' })(req, res, next);
+    });
+});
 
-// Import des services
-
+// -----------------------------
 // Import des routes
+// -----------------------------
 const authRoutes = require('./routes/auth.routes');
 const authStudentRoutes = require('./routes/auth.student.routes');
 const slotRoutes = require('./routes/slot.routes');
@@ -88,7 +86,9 @@ const adminRoutes = require('./routes/admin.routes');
 const paymentRoutes = require('./routes/payment.routes');
 const statsRoutes = require('./routes/stats.routes');
 
+// -----------------------------
 // Routes API
+// -----------------------------
 app.use('/api/auth', authRoutes);
 app.use('/api/auth/student', authStudentRoutes);
 app.use('/api/slots', slotRoutes);
@@ -97,7 +97,9 @@ app.use('/api/admin', adminRoutes);
 app.use('/api', paymentRoutes);
 app.use('/api/stats', statsRoutes);
 
+// -----------------------------
 // Gestion des erreurs globales
+// -----------------------------
 app.use((err, req, res, next) => {
     console.error(err.stack);
     res.status(500).json({
@@ -116,15 +118,13 @@ app.use((req, res) => {
     });
 });
 
+// -----------------------------
 // Synchronisation DB
+// -----------------------------
 const syncDB = async () => {
     try {
         await sequelize.query('SET FOREIGN_KEY_CHECKS = 0', { raw: true });
-        await sequelize.sync({
-            alter: { drop: false },
-            logging: console.log,
-            benchmark: true
-        });
+        await sequelize.sync({ alter: { drop: false }, logging: console.log, benchmark: true });
         await sequelize.query('SET FOREIGN_KEY_CHECKS = 1', { raw: true });
         console.log('✅ Base de données synchronisée avec succès');
     } catch (error) {
@@ -134,7 +134,9 @@ const syncDB = async () => {
     }
 };
 
+// -----------------------------
 // Démarrage serveur
+// -----------------------------
 const PORT = process.env.PORT || 3555;
 syncDB().then(() => {
     app.listen(PORT, () => {

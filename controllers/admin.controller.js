@@ -903,6 +903,44 @@ exports.toggleAfficheActive = async (req, res) => {
     }
 };
 
+
+// Upload d'image pour affiche
+exports.uploadAfficheImage = async (req, res) => {
+    if (!req.file) {
+        return res.status(400).json({ message: 'Aucun fichier téléchargé' });
+    }
+
+    try {
+        // Construire l'URL relative du fichier
+        const imageUrl = `affiches/${req.file.filename}`;
+        
+        // Créer l'entrée dans la base de données
+        const affiche = await Affiche.create({
+            titre: req.body.titre || 'Affiche sans titre',
+            contenu: req.body.contenu || '',
+            image_url: imageUrl,
+            is_active: req.body.is_active !== undefined ? req.body.is_active : true,
+            date_debut: req.body.date_debut || null,
+            date_fin: req.body.date_fin || null,
+            priorite: req.body.priorite || 0
+        });
+        
+        res.status(201).json({
+            message: 'Affiche créée avec succès',
+            affiche: affiche,
+            imageUrl: imageUrl,
+            fullUrl: `${req.protocol}://${req.get('host')}/uploads/${imageUrl}`
+        });
+    } catch (error) {
+        console.error(error);
+        // Supprimer le fichier en cas d'erreur
+        if (req.file) {
+            fs.unlinkSync(req.file.path);
+        }
+        res.status(500).json({ message: 'Erreur lors de la création de l\'affiche' });
+    }
+};
+
 // Récupérer les affiches actives pour les utilisateurs
 exports.getActiveAffiches = async (req, res) => {
     try {
