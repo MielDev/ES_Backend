@@ -334,6 +334,7 @@ exports.forgotPassword = async (req, res) => {
 
         try {
             await transporter.sendMail({
+                from: process.env.SMTP_FROM,
                 to: user.email,
                 subject: 'Réinitialisation de votre mot de passe - Épicerie Solidaire',
                 text: message,
