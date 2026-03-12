@@ -2,6 +2,21 @@ const { sequelize, Op, AdminConfig, User, Appointment, Payment, Slot, Affiche } 
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
+const nodemailer = require('nodemailer');
+
+// Configuration du transporteur email
+const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: process.env.SMTP_PORT,
+    secure: process.env.SMTP_SECURE === 'true',
+    auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
+    },
+    tls: {
+        rejectUnauthorized: false
+    }
+});
 
 // Marquer les rendez-vous non validés comme manqués
 // Marquer les rendez-vous non validés comme manqués
@@ -86,6 +101,134 @@ exports.markMissedAppointments = async (req, res) => {
 
         console.log(`${appointments.length} rendez-vous marqués comme manqués`);
 
+        // 5. Envoyer des emails d'avertissement aux utilisateurs
+        let emailsSent = 0;
+        let emailErrors = 0;
+
+        // Récupérer les informations des utilisateurs
+        const userIds = [...new Set(appointments.map(a => a.userId).filter(Boolean))];
+        const users = await User.findAll({
+            where: { id: userIds },
+            attributes: ['id', 'nom', 'prenom', 'email'],
+            transaction
+        });
+
+        const userMap = users.reduce((map, user) => {
+            map[user.id] = user;
+            return map;
+        }, {});
+
+        // Envoyer les emails
+        for (const appointment of appointments) {
+            const user = userMap[appointment.userId];
+            if (user && user.email) {
+                try {
+                    await transporter.sendMail({
+                        from: process.env.SMTP_FROM,
+                        to: user.email,
+                        subject: 'Avertissement : Rendez-vous manqué - Épicerie Solidaire',
+                        text: `Bonjour ${user.prenom} ${user.nom},\n\nNous vous informons que votre rendez-vous du ${new Date(appointment.date_rdv).toLocaleDateString('fr-FR')} à ${appointment.heure_debut} a été marqué comme manqué.\n\nIl est important de respecter vos rendez-vous pour permettre à tous les étudiants de bénéficier du service.\n\nSi vous avez une raison valable pour votre absence, merci de nous contacter.\n\nCordialement,\nL'équipe de l'Épicerie Solidaire`,
+                        html: `
+                            <!DOCTYPE html>
+                            <html lang="fr">
+                            <head>
+                                <meta charset="UTF-8">
+                                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                                <title>Avertissement : Rendez-vous manqué</title>
+                                <style>
+                                    body {
+                                        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                                        line-height: 1.6;
+                                        color: #333;
+                                        max-width: 600px;
+                                        margin: 0 auto;
+                                        padding: 20px;
+                                        background-color: #f8f8f8;
+                                    }
+                                    .container {
+                                        background: white;
+                                        padding: 30px;
+                                        border-radius: 10px;
+                                        box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+                                        border-top: 4px solid #DF7841;
+                                    }
+                                    h1 {
+                                        color: #DF7841;
+                                        text-align: center;
+                                        margin-bottom: 20px;
+                                    }
+                                    .warning-box {
+                                        background: #fff3cd;
+                                        border-left: 4px solid #DF7841;
+                                        padding: 15px;
+                                        margin: 20px 0;
+                                        border-radius: 5px;
+                                    }
+                                    .appointment-info {
+                                        background: #f8f9fa;
+                                        padding: 15px;
+                                        border-radius: 5px;
+                                        margin: 15px 0;
+                                    }
+                                    .footer {
+                                        text-align: center;
+                                        margin-top: 30px;
+                                        color: #666;
+                                        font-size: 14px;
+                                    }
+                                </style>
+                            </head>
+                            <body>
+                                <div class="container">
+                                    <h1>⚠️ Avertissement : Rendez-vous manqué</h1>
+                                    
+                                    <p>Bonjour <strong>${user.prenom} ${user.nom}</strong>,</p>
+                                    
+                                    <div class="warning-box">
+                                        <h3>📅 Rendez-vous manqué</h3>
+                                        <p>Nous vous informons que votre rendez-vous a été marqué comme manqué.</p>
+                                    </div>
+                                    
+                                    <div class="appointment-info">
+                                        <h4>📋 Détails du rendez-vous :</h4>
+                                        <ul>
+                                            <li><strong>Date :</strong> ${new Date(appointment.date_rdv).toLocaleDateString('fr-FR')}</li>
+                                            <li><strong>Heure :</strong> ${appointment.heure_debut}</li>
+                                            <li><strong>Lieu :</strong> Épicerie Solidaire</li>
+                                        </ul>
+                                    </div>
+                                    
+                                    <p>Il est important de respecter vos rendez-vous pour permettre à tous les étudiants de bénéficier du service.</p>
+                                    
+                                    <p><strong>Que faire maintenant ?</strong></p>
+                                    <ul>
+                                        <li>Si vous avez une raison valable pour votre absence, merci de nous contacter</li>
+                                        <li>Vous pouvez prendre un nouveau rendez-vous via votre espace personnel</li>
+                                        <li>Pensez à annuler à l'avance si vous ne pouvez pas venir</li>
+                                    </ul>
+                                    
+                                    <p>Merci de votre compréhension et de votre coopération.</p>
+                                    
+                                    <div class="footer">
+                                        <p>Cordialement,<br>L'équipe de l'Épicerie Solidaire</p>
+                                        <p><small>Pour toute question, contactez-nous à l'adresse indiquée sur notre site.</small></p>
+                                    </div>
+                                </div>
+                            </body>
+                            </html>
+                        `
+                    });
+                    emailsSent++;
+                    console.log(`Email d'avertissement envoyé à ${user.email}`);
+                } catch (emailError) {
+                    emailErrors++;
+                    console.error(`Erreur email pour ${user.email}:`, emailError.message);
+                }
+            }
+        }
+
+        console.log(`${emailsSent} emails envoyés, ${emailErrors} erreurs`);
+
         // 4. Désactiver les créneaux associés
         let slotsUpdatedCount = 0;
         if (slotIds.length > 0) {
@@ -112,7 +255,9 @@ exports.markMissedAppointments = async (req, res) => {
             success: true,
             message: `${appointments.length} rendez-vous ont été marqués comme manqués`,
             count: appointments.length,
-            slotsUpdated: slotsUpdatedCount
+            slotsUpdated: slotsUpdatedCount,
+            emailsSent: emailsSent,
+            emailErrors: emailErrors
         });
 
     } catch (err) {

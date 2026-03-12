@@ -97,6 +97,107 @@ exports.registerStudent = async (req, res) => {
             { expiresIn: '24h' }
         );
 
+        // Envoyer un email de bienvenue
+        try {
+            await transporter.sendMail({
+                from: process.env.SMTP_FROM,
+                to: user.email,
+                subject: 'Bienvenue à l\'Épicerie Solidaire !',
+                text: `Bonjour ${user.prenom} ${user.nom},\n\nBienvenue à l'Épicerie Solidaire !\n\nVotre inscription a été enregistrée avec succès. Votre justificatif étudiant est actuellement en cours de validation.\n\nVous recevrez un email dès que votre compte sera validé.\n\nMerci de votre confiance !\n\nL'équipe de l'Épicerie Solidaire`,
+                html: `
+                    <!DOCTYPE html>
+                    <html lang="fr">
+                    <head>
+                        <meta charset="UTF-8">
+                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                        <title>Bienvenue à l'Épicerie Solidaire</title>
+                        <style>
+                            body {
+                                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                                line-height: 1.6;
+                                color: #333;
+                                max-width: 600px;
+                                margin: 0 auto;
+                                padding: 20px;
+                                background-color: #f8f8f8;
+                            }
+                            .container {
+                                background: white;
+                                padding: 30px;
+                                border-radius: 10px;
+                                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+                                border-top: 4px solid #4E9667;
+                            }
+                            h1 {
+                                color: #4E9667;
+                                text-align: center;
+                                margin-bottom: 20px;
+                            }
+                            .welcome-message {
+                                background: linear-gradient(135deg, #4E9667, #5C77B9);
+                                color: white;
+                                padding: 20px;
+                                border-radius: 8px;
+                                text-align: center;
+                                margin: 20px 0;
+                            }
+                            .status-box {
+                                background: #f0f8f0;
+                                border-left: 4px solid #4E9667;
+                                padding: 15px;
+                                margin: 20px 0;
+                            }
+                            .footer {
+                                text-align: center;
+                                margin-top: 30px;
+                                color: #666;
+                                font-size: 14px;
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="container">
+                            <h1>🎉 Bienvenue à l'Épicerie Solidaire !</h1>
+                            
+                            <div class="welcome-message">
+                                <h2>Bonjour ${user.prenom} ${user.nom} !</h2>
+                                <p>Nous sommes ravis de vous accueillir parmi nous.</p>
+                            </div>
+                            
+                            <p>Votre inscription a été enregistrée avec succès. Voici les prochaines étapes :</p>
+                            
+                            <div class="status-box">
+                                <h3>📋 Validation en cours</h3>
+                                <p>Votre justificatif étudiant est actuellement en cours de validation par notre équipe.</p>
+                                <p><strong>Statut actuel : En attente de validation</strong></p>
+                            </div>
+                            
+                            <p>Vous recevrez un email dès que votre compte sera validé et que vous pourrez commencer à utiliser nos services.</p>
+                            
+                            <p><strong>Vos informations :</strong></p>
+                            <ul>
+                                <li>Email : ${user.email}</li>
+                                <li>École/Université : ${user.ecole_universite || 'Non spécifié'}</li>
+                                <li>Spécialité : ${user.specialite || 'Non spécifié'}</li>
+                            </ul>
+                            
+                            <p>Merci de votre confiance et à très bientôt à l'Épicerie Solidaire !</p>
+                            
+                            <div class="footer">
+                                <p>Cordialement,<br>L'équipe de l'Épicerie Solidaire</p>
+                                <p><small>Pour toute question, contactez-nous à l'adresse indiquée sur notre site.</small></p>
+                            </div>
+                        </div>
+                    </body>
+                    </html>
+                `
+            });
+            console.log('Email de bienvenue envoyé à:', user.email);
+        } catch (emailError) {
+            console.error('Erreur lors de l\'envoi de l\'email de bienvenue:', emailError);
+            // Ne pas bloquer l'inscription si l'email échoue
+        }
+
         res.status(201).json({
             message: 'Inscription réussie. Votre justificatif est en cours de validation.',
             user: {
