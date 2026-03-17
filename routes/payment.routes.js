@@ -120,13 +120,4 @@ router.use((err, req, res, next) => {
     });
 });
 
-// Gestion des routes non trouvées
-router.use((req, res) => {
-    res.status(404).json({
-        success: false,
-        message: 'Route non trouvée',
-        path: req.originalUrl
-    });
-});
-
 module.exports = router;

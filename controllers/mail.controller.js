@@ -9,7 +9,7 @@ const {
 const { MailHistory } = require('../models/mailhistory.model');
 
 // Middleware de validation du token JWT
-const authenticateToken = (req, res, next) => {
+exports.authenticateToken = (req, res, next) => {
     const authHeader = req.headers['authorization'];
     const token = authHeader && authHeader.split(' ')[1];
 
@@ -33,8 +33,8 @@ const authenticateToken = (req, res, next) => {
 };
 
 // Middleware pour vérifier si l'utilisateur est admin
-const requireAdmin = (req, res, next) => {
-    if (req.user.role !== 'administrateur') {
+exports.requireAdmin = (req, res, next) => {
+    if (req.user.role !== 'admin') {
         return res.status(403).json({
             success: false,
             message: 'Accès refusé - Permissions administrateur requises'
@@ -44,7 +44,7 @@ const requireAdmin = (req, res, next) => {
 };
 
 // Validation pour l'envoi de mail
-const validateMailRequest = [
+exports.validateMailRequest = [
     require('express-validator').body('subject')
         .trim()
         .isLength({ min: 1, max: 200 })
