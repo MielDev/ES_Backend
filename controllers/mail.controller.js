@@ -34,7 +34,7 @@ const authenticateToken = (req, res, next) => {
 
 // Middleware pour vérifier si l'utilisateur est admin
 const requireAdmin = (req, res, next) => {
-    if (req.user.role !== 'admin') {
+    if (req.user.role !== 'administrateur') {
         return res.status(403).json({
             success: false,
             message: 'Accès refusé - Permissions administrateur requises'
@@ -55,7 +55,7 @@ const validateMailRequest = [
         .withMessage('Le contenu doit contenir entre 10 et 10 000 caractères'),
     require('express-validator').body('recipients')
         .isIn(['all', 'admins', 'users'])
-        .withMessage('Les destinataires doivent être: all, admins ou users')
+        .withMessage('Les destinataires doivent être: all, admins ou users'),
 ];
 
 // Envoyer un email à tous les destinataires
@@ -163,7 +163,7 @@ exports.getRecipients = async (req, res) => {
         
         res.json({
             success: true,
-            data: recipients.map(r => ({
+            recipients: recipients.map(r => ({
                 id: r.id,
                 email: r.email,
                 name: r.name,
@@ -215,11 +215,9 @@ exports.getStatistics = async (req, res) => {
         
         res.json({
             success: true,
-            data: {
-                totalSent: parseInt(result.dataValues.totalSent) || 0,
-                totalFailed: parseInt(result.dataValues.totalFailed) || 0,
-                lastSentDate: result.dataValues.lastSentDate
-            }
+            totalSent: parseInt(result.dataValues.totalSent) || 0,
+            totalFailed: parseInt(result.dataValues.totalFailed) || 0,
+            lastSentDate: result.dataValues.lastSentDate
         });
 
     } catch (error) {
@@ -252,13 +250,10 @@ exports.getHistory = async (req, res) => {
 
         res.json({
             success: true,
-            data: mails,
-            pagination: {
-                total: count,
-                page,
-                limit,
-                totalPages: Math.ceil(count / limit)
-            }
+            mails: mails,
+            total: count,
+            page: page,
+            totalPages: Math.ceil(count / limit)
         });
 
     } catch (error) {
