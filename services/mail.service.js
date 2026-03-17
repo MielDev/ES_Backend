@@ -27,7 +27,7 @@ const getRecipients = async (recipientsType) => {
 
     switch (recipientsType) {
         case 'admins':
-            whereClause.role = 'admin';
+            whereClause.role = 'administrateur';
             break;
         case 'users':
             whereClause.role = 'utilisateur';

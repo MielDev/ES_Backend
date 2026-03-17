@@ -1,5 +1,6 @@
 const { DataTypes } = require('sequelize');
 const sequelize = require('../config/db');
+const User = require('./user.model');
 
 const MailHistory = sequelize.define('MailHistory', {
     id: { 
@@ -73,6 +74,12 @@ const MailHistory = sequelize.define('MailHistory', {
             fields: ['sentBy']
         }
     ]
+});
+
+// Association avec le modèle User
+MailHistory.belongsTo(User, {
+    foreignKey: 'sentBy',
+    as: 'sender'
 });
 
 module.exports = MailHistory;

@@ -6,7 +6,7 @@ const {
     testEmailConfiguration, 
     saveMailHistory 
 } = require('../services/mail.service');
-const { MailHistory } = require('../models/mailhistory.model');
+const MailHistory = require('../models/mailhistory.model');
 
 // Middleware de validation du token JWT
 const authenticateToken = (req, res, next) => {
