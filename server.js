@@ -85,6 +85,7 @@ const apptRoutes = require('./routes/appointment.routes');
 const adminRoutes = require('./routes/admin.routes');
 const paymentRoutes = require('./routes/payment.routes');
 const statsRoutes = require('./routes/stats.routes');
+const mailRoutes = require('./routes/mail.routes');
 
 // -----------------------------
 // Routes API
@@ -96,6 +97,7 @@ app.use('/api/appointments', apptRoutes);
 app.use('/api/admin', adminRoutes);
 app.use('/api', paymentRoutes);
 app.use('/api/stats', statsRoutes);
+app.use('/api/mail', mailRoutes);
 
 // -----------------------------
 // Gestion des erreurs globales

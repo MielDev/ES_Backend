@@ -1,0 +1,6 @@
+# Installation des dépendances pour le service d'envoi d'emails
+
+npm install nodemailer express-validator
+
+# ou avec yarn
+yarn add nodemailer express-validator

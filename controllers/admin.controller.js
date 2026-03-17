@@ -180,21 +180,22 @@ exports.markMissedAppointments = async (req, res) => {
                             </head>
                             <body>
                                 <div class="container">
-                                    <h1>⚠️ Avertissement : Rendez-vous manqué</h1>
+                                    <h1><i class="icon-warning"></i> Avertissement : Rendez-vous manqué</h1>
                                     
                                     <p>Bonjour <strong>${user.prenom} ${user.nom}</strong>,</p>
                                     
                                     <div class="warning-box">
-                                        <h3>📅 Rendez-vous manqué</h3>
+                                        <h3><i class="icon-calendar"></i> Rendez-vous manqué</h3>
                                         <p>Nous vous informons que votre rendez-vous a été marqué comme manqué.</p>
                                     </div>
                                     
                                     <div class="appointment-info">
-                                        <h4>📋 Détails du rendez-vous :</h4>
+                                        <h4><i class="icon-list"></i> Détails du rendez-vous :</h4>
                                         <ul>
-                                            <li><strong>Date :</strong> ${new Date(appointment.date_rdv).toLocaleDateString('fr-FR')}</li>
-                                            <li><strong>Heure :</strong> ${appointment.heure_debut}</li>
-                                            <li><strong>Lieu :</strong> Épicerie Solidaire</li>
+                                            <li><i class="icon-date"></i><strong>Date :</strong> ${new Date(appointment.date_rdv).toLocaleDateString('fr-FR')}</li>
+                                            <li><i class="icon-clock"></i><strong>Heure :</strong> ${appointment.heure_debut}</li>
+                                            <li><i class="icon-location"></i><strong>Lieu :</strong> Épicerie Solidaire<br>
+                                            <small>16 Boulevard Charles Nicolle<br>72000 Le Mans</small></li>
                                         </ul>
                                     </div>
                                     
@@ -202,9 +203,9 @@ exports.markMissedAppointments = async (req, res) => {
                                     
                                     <p><strong>Que faire maintenant ?</strong></p>
                                     <ul>
-                                        <li>Si vous avez une raison valable pour votre absence, merci de nous contacter</li>
-                                        <li>Vous pouvez prendre un nouveau rendez-vous via votre espace personnel</li>
-                                        <li>Pensez à annuler à l'avance si vous ne pouvez pas venir</li>
+                                        <li><i class="icon-contact"></i> Si vous avez une raison valable pour votre absence, merci de nous contacter</li>
+                                        <li><i class="icon-calendar-new"></i> Vous pouvez prendre un nouveau rendez-vous via votre espace personnel</li>
+                                        <li><i class="icon-cancel"></i> Pensez à annuler à l'avance si vous ne pouvez pas venir</li>
                                     </ul>
                                     
                                     <p>Merci de votre compréhension et de votre coopération.</p>

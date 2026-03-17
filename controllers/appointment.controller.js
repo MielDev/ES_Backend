@@ -1,4 +1,19 @@
 const { User, Slot, IntervalSlot, Appointment } = require('../models');
+const nodemailer = require('nodemailer');
+
+// Configuration du transporteur email
+const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: process.env.SMTP_PORT,
+    secure: process.env.SMTP_SECURE === 'true',
+    auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
+    },
+    tls: {
+        rejectUnauthorized: false
+    }
+});
 
 exports.bookAppointment = async (req, res) => {
     try {
@@ -8,7 +23,7 @@ exports.bookAppointment = async (req, res) => {
         // Vérifier que l'utilisateur est actif
         const user = await User.findByPk(userId);
         if (!user || !user.isActive) {
-            return res.status(403).json({ message: 'Votre compte est désactivé' });
+            return res.status(403).json({ message: 'Votre compte est désactivé veillez contacter un administrateur' });
         }
 
         const intervalSlot = await IntervalSlot.findByPk(intervalSlotId, {
@@ -134,6 +149,122 @@ exports.bookAppointment = async (req, res) => {
         });
 
         await intervalSlot.update({ places_restantes: intervalSlot.places_restantes - 1 });
+
+        // Envoyer un email de confirmation du rendez-vous
+        try {
+            await transporter.sendMail({
+                from: process.env.SMTP_FROM,
+                to: user.email,
+                subject: 'Confirmation de votre rendez-vous - Épicerie Solidaire',
+                text: `Bonjour ${user.prenom} ${user.nom},\n\nVotre rendez-vous a été confirmé avec succès.\n\nDate : ${new Date(intervalSlot.date).toLocaleDateString('fr-FR')}\nHeure : ${intervalSlot.heure_debut}\nLieu : Épicerie Solidaire\n\nMerci de votre ponctualité.\n\nCordialement,\nL'équipe de l'Épicerie Solidaire`,
+                html: `
+                    <!DOCTYPE html>
+                    <html lang="fr">
+                    <head>
+                        <meta charset="UTF-8">
+                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                        <title>Confirmation de rendez-vous</title>
+                        <style>
+                            body {
+                                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                                line-height: 1.6;
+                                color: #333;
+                                max-width: 600px;
+                                margin: 0 auto;
+                                padding: 20px;
+                                background-color: #f8f8f8;
+                            }
+                            .container {
+                                background: white;
+                                padding: 30px;
+                                border-radius: 10px;
+                                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+                                border-top: 4px solid #4E9667;
+                            }
+                            h1 {
+                                color: #4E9667;
+                                text-align: center;
+                                margin-bottom: 20px;
+                            }
+                            .confirmation-box {
+                                background: linear-gradient(135deg, #4E9667, #5C77B9);
+                                color: white;
+                                padding: 20px;
+                                border-radius: 8px;
+                                text-align: center;
+                                margin: 20px 0;
+                            }
+                            .appointment-info {
+                                background: #f0f8f0;
+                                border-left: 4px solid #4E9667;
+                                padding: 15px;
+                                margin: 20px 0;
+                                border-radius: 5px;
+                            }
+                            .info-item {
+                                margin: 10px 0;
+                                padding: 10px;
+                                background: #f8f9fa;
+                                border-radius: 5px;
+                            }
+                            .footer {
+                                text-align: center;
+                                margin-top: 30px;
+                                color: #666;
+                                font-size: 14px;
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="container">
+                            <h1><i class="icon-check"></i> Confirmation de votre rendez-vous</h1>
+                            
+                            <div class="confirmation-box">
+                                <h2>Bonjour ${user.prenom} ${user.nom} !</h2>
+                                <p>Votre rendez-vous a été confirmé avec succès</p>
+                            </div>
+                            
+                            <div class="appointment-info">
+                                <h3><i class="icon-list"></i> Détails de votre rendez-vous :</h3>
+                                <div class="info-item">
+                                    <i class="icon-calendar"></i>
+                                    <strong>Date :</strong> ${new Date(intervalSlot.date).toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                                </div>
+                                <div class="info-item">
+                                    <i class="icon-clock"></i>
+                                    <strong>Heure :</strong> ${intervalSlot.heure_debut}
+                                </div>
+                                <div class="info-item">
+                                    <i class="icon-location"></i>
+                                    <strong>Lieu :</strong> Épicerie Solidaire<br>
+                                    <small>16 Boulevard Charles Nicolle<br>72000 Le Mans</small>
+                                </div>
+                                ${note ? `<div class="info-item"><i class="icon-note"></i><strong>Note :</strong> ${note}</div>` : ''}
+                            </div>
+                            
+                            <p><strong>Informations importantes :</strong></p>
+                            <ul>
+                                <li><i class="icon-time"></i> Merci d'arriver 5 minutes avant l'heure de votre rendez-vous</li>
+                                <li><i class="icon-cancel"></i> Pensez à annuler à l'avance si vous ne pouvez pas venir</li>
+                                <li><i class="icon-week"></i> Un seul rendez-vous par semaine est autorisé</li>
+                            </ul>
+                            
+                            <p>Nous vous remercions de votre confiance et nous attendons avec plaisir !</p>
+                            
+                            <div class="footer">
+                                <p>Cordialement,<br>L'équipe de l'Épicerie Solidaire</p>
+                                <p><small>Pour toute question, contactez-nous à l'adresse indiquée sur notre site.</small></p>
+                            </div>
+                        </div>
+                    </body>
+                    </html>
+                `
+            });
+            console.log('Email de confirmation envoyé à:', user.email);
+        } catch (emailError) {
+            console.error('Erreur lors de l\'envoi de l\'email de confirmation:', emailError);
+            // Ne pas bloquer la réservation si l'email échoue
+        }
 
         res.status(201).json(appointment);
     } catch (err) {

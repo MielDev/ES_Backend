@@ -4,6 +4,21 @@ const Transaction = require('../models/transaction.model');
 const { v4: uuidv4 } = require('uuid');
 const sequelize = require('../config/db');
 const { Op } = require('sequelize');
+const nodemailer = require('nodemailer');
+
+// Configuration du transporteur email
+const transporter = nodemailer.createTransport({
+    host: process.env.SMTP_HOST,
+    port: process.env.SMTP_PORT,
+    secure: process.env.SMTP_SECURE === 'true',
+    auth: {
+        user: process.env.SMTP_USER,
+        pass: process.env.SMTP_PASS
+    },
+    tls: {
+        rejectUnauthorized: false
+    }
+});
 
 // ============================================
 // 1️⃣ CRÉER UNE TRANSACTION
@@ -89,6 +104,133 @@ const createTransaction = async (req, res) => {
             lastPaymentDate: new Date()
         });
         console.log(`✅ Méthode de paiement mise à jour pour l'utilisateur ${user.id}`);
+
+        // Envoyer un email de confirmation de paiement
+        try {
+            await transporter.sendMail({
+                from: process.env.SMTP_FROM,
+                to: user.email,
+                subject: 'Confirmation de votre paiement - Épicerie Solidaire',
+                text: `Bonjour ${user.prenom} ${user.nom},\n\nNous vous confirmons la réception de votre paiement de ${amountValue.toFixed(2)} ${currency}.\n\nRéférence : ${transaction.reference}\nDate : ${new Date().toLocaleDateString('fr-FR')}\nMéthode : ${paymentMethod}\n\nMerci pour votre contribution à l'Épicerie Solidaire !\n\nCordialement,\nL'équipe de l'Épicerie Solidaire`,
+                html: `
+                    <!DOCTYPE html>
+                    <html lang="fr">
+                    <head>
+                        <meta charset="UTF-8">
+                        <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                        <title>Confirmation de paiement</title>
+                        <style>
+                            body {
+                                font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+                                line-height: 1.6;
+                                color: #333;
+                                max-width: 600px;
+                                margin: 0 auto;
+                                padding: 20px;
+                                background-color: #f8f8f8;
+                            }
+                            .container {
+                                background: white;
+                                padding: 30px;
+                                border-radius: 10px;
+                                box-shadow: 0 4px 15px rgba(0, 0, 0, 0.1);
+                                border-top: 4px solid #5C77B9;
+                            }
+                            h1 {
+                                color: #5C77B9;
+                                text-align: center;
+                                margin-bottom: 20px;
+                            }
+                            .payment-box {
+                                background: linear-gradient(135deg, #5C77B9, #4E9667);
+                                color: white;
+                                padding: 20px;
+                                border-radius: 8px;
+                                text-align: center;
+                                margin: 20px 0;
+                            }
+                            .payment-info {
+                                background: #f0f4f8;
+                                border-left: 4px solid #5C77B9;
+                                padding: 15px;
+                                margin: 20px 0;
+                                border-radius: 5px;
+                            }
+                            .info-item {
+                                margin: 10px 0;
+                                padding: 10px;
+                                background: #f8f9fa;
+                                border-radius: 5px;
+                            }
+                            .amount {
+                                font-size: 24px;
+                                font-weight: bold;
+                                color: #5C77B9;
+                            }
+                            .footer {
+                                text-align: center;
+                                margin-top: 30px;
+                                color: #666;
+                                font-size: 14px;
+                            }
+                        </style>
+                    </head>
+                    <body>
+                        <div class="container">
+                            <h1><i class="icon-payment"></i> Confirmation de votre paiement</h1>
+                            
+                            <div class="payment-box">
+                                <h2>Bonjour ${user.prenom} ${user.nom} !</h2>
+                                <p>Nous vous confirmons la réception de votre paiement</p>
+                                <div class="amount">${amountValue.toFixed(2)} ${currency}</div>
+                            </div>
+                            
+                            <div class="payment-info">
+                                <h3><i class="icon-receipt"></i> Détails de la transaction :</h3>
+                                <div class="info-item">
+                                    <i class="icon-reference"></i>
+                                    <strong>Référence :</strong> ${transaction.reference}
+                                </div>
+                                <div class="info-item">
+                                    <i class="icon-date"></i>
+                                    <strong>Date :</strong> ${new Date().toLocaleDateString('fr-FR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
+                                </div>
+                                <div class="info-item">
+                                    <i class="icon-method"></i>
+                                    <strong>Méthode de paiement :</strong> ${paymentMethod}
+                                </div>
+                                <div class="info-item">
+                                    <i class="icon-description"></i>
+                                    <strong>Description :</strong> ${description || 'Paiement Épicerie Solidaire'}
+                                </div>
+                            </div>
+                            
+                            <p><strong>Merci pour votre contribution !</strong></p>
+                            <p>Votre paiement nous aide à continuer notre mission d'aider les étudiants en difficulté. Grâce à vous, l'Épicerie Solidaire peut poursuivre ses activités et soutenir la communauté étudiante.</p>
+                            
+                            <p><strong>Que pouvez-vous faire maintenant ?</strong></p>
+                            <ul>
+                                <li><i class="icon-calendar"></i> Prendre rendez-vous pour récupérer vos produits</li>
+                                <li><i class="icon-history"></i> Consulter l'historique de vos paiements dans votre espace</li>
+                                <li><i class="icon-contact"></i> Nous contacter si vous avez des questions</li>
+                            </ul>
+                            
+                            <p>Nous vous remercions sincèrement pour votre générosité et votre soutien !</p>
+                            
+                            <div class="footer">
+                                <p>Cordialement,<br>L'équipe de l'Épicerie Solidaire</p>
+                                <p><small>Pour toute question, contactez-nous à l'adresse indiquée sur notre site.</small></p>
+                            </div>
+                        </div>
+                    </body>
+                    </html>
+                `
+            });
+            console.log('Email de confirmation de paiement envoyé à:', user.email);
+        } catch (emailError) {
+            console.error('Erreur lors de l\'envoi de l\'email de paiement:', emailError);
+            // Ne pas bloquer la transaction si l'email échoue
+        }
 
         // Réponse au client
         return res.status(201).json({
