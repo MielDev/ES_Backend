@@ -94,7 +94,6 @@ app.use('/api/auth/student', authStudentRoutes);
 app.use('/api/slots', slotRoutes);
 app.use('/api/appointments', apptRoutes);
 app.use('/api/admin', adminRoutes);
-app.use('/api', paymentRoutes);
 app.use('/api/stats', statsRoutes);
 
 // Ajout des routes mail avec debug
@@ -105,6 +104,8 @@ try {
 } catch (err) {
     console.error('❌ Erreur chargement mail routes:', err.message);
 }
+
+app.use('/api', paymentRoutes);
 
 // -----------------------------
 // Gestion des erreurs globales
