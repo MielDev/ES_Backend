@@ -104,7 +104,6 @@ try {
 } catch (err) {
     console.error('❌ Erreur chargement mail routes:', err.message);
 }
-
 app.use('/api', paymentRoutes);
 
 // -----------------------------

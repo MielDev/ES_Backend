@@ -32,7 +32,7 @@ const isAdmin = (req, res, next) => {
 // Vérifie que l'utilisateur est utilisateur ou admin
 const isUtilisateur = (req, res, next) => {
     if (!req.user) return res.status(401).json({ message: 'Non authentifié' });
-    if (!['utilisateur', 'admin'].includes(req.user.role)) {
+    if (!['utilisateur', 'admin', 'administrateur'].includes(req.user.role)) {
         return res.status(403).json({ message: 'Accès refusé (utilisateur seulement)' });
     }
     next();
