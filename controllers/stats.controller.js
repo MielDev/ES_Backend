@@ -15,17 +15,17 @@ const getAdminDashboardStats = async (req, res) => {
         ] = await Promise.all([
             // Nombre total de rendez-vous
             sequelize.query(
-                'SELECT COUNT(*) as count FROM Appointments',
+                'SELECT COUNT(*) as count FROM appointments',
                 { type: QueryTypes.SELECT }
             ),
             // Nombre de rendez-vous par statut
             sequelize.query(
-                'SELECT status, COUNT(*) as count FROM Appointments GROUP BY status',
+                'SELECT status, COUNT(*) as count FROM appointments GROUP BY status',
                 { type: QueryTypes.SELECT }
             ),
-            // Nombre total d'étudiants (utilisateurs avec rôle utilisateur)
+            // Nombre total d'étudiants
             sequelize.query(
-                "SELECT COUNT(*) as count FROM Users WHERE role = 'utilisateur'",
+                'SELECT COUNT(*) as count FROM students',
                 { type: QueryTypes.SELECT }
             ),
             // Dernières inscriptions (7 derniers jours)
@@ -33,8 +33,8 @@ const getAdminDashboardStats = async (req, res) => {
                 `SELECT 
                     DATE(createdAt) as date, 
                     COUNT(*) as count 
-                FROM Users 
-                WHERE role = 'utilisateur' AND createdAt >= DATE_SUB(NOW(), INTERVAL 7 DAY)
+                FROM students 
+                WHERE createdAt >= DATE_SUB(NOW(), INTERVAL 7 DAY)
                 GROUP BY DATE(createdAt)
                 ORDER BY date ASC`,
                 { type: QueryTypes.SELECT }
@@ -42,24 +42,24 @@ const getAdminDashboardStats = async (req, res) => {
             // Statistiques mensuelles
             sequelize.query(
                 `SELECT 
-                    DATE_FORMAT(date_rdv, '%Y-%m') as month,
+                    DATE_FORMAT(date, '%Y-%m') as month,
                     COUNT(*) as total_appointments,
-                    SUM(CASE WHEN status = 'terminé' OR status = 'validé_admin' THEN 1 ELSE 0 END) as completed
-                FROM Appointments
-                WHERE date_rdv >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
-                GROUP BY DATE_FORMAT(date_rdv, '%Y-%m')
+                    SUM(CASE WHEN status = 'completed' THEN 1 ELSE 0 END) as completed
+                FROM appointments
+                WHERE date >= DATE_SUB(NOW(), INTERVAL 6 MONTH)
+                GROUP BY DATE_FORMAT(date, '%Y-%m')
                 ORDER BY month ASC`,
                 { type: QueryTypes.SELECT }
             ),
-            // Statistiques par nationalité
+            // Statistiques par pays
             sequelize.query(
                 `SELECT 
-                    nationalite as country,
+                    country,
                     COUNT(*) as count,
-                    ROUND((COUNT(*) * 100.0) / (SELECT COUNT(*) FROM Users WHERE role = 'utilisateur'), 1) as percentage
-                FROM Users
-                WHERE role = 'utilisateur' AND nationalite IS NOT NULL
-                GROUP BY nationalite
+                    ROUND((COUNT(*) * 100.0) / (SELECT COUNT(*) FROM students), 1) as percentage
+                FROM students
+                WHERE country IS NOT NULL
+                GROUP BY country
                 ORDER BY count DESC
                 LIMIT 5`,
                 { type: QueryTypes.SELECT }

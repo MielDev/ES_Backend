@@ -90,14 +90,14 @@ const mailRoutes = require('./routes/mail.routes');
 // -----------------------------
 // Routes API
 // -----------------------------
-app.use('/api/auth/student', authStudentRoutes);
 app.use('/api/auth', authRoutes);
+app.use('/api/auth/student', authStudentRoutes);
 app.use('/api/slots', slotRoutes);
 app.use('/api/appointments', apptRoutes);
 app.use('/api/admin', adminRoutes);
+app.use('/api', paymentRoutes);
 app.use('/api/stats', statsRoutes);
 app.use('/api/mail', mailRoutes);
-app.use('/api', paymentRoutes);
 
 // -----------------------------
 // Gestion des erreurs globales
