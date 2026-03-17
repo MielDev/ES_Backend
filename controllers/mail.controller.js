@@ -34,6 +34,9 @@ const authenticateToken = (req, res, next) => {
 
 // Middleware pour vérifier si l'utilisateur est admin
 const requireAdmin = (req, res, next) => {
+    console.log('🔍 Debug - Rôle utilisateur:', req.user.role);
+    console.log('🔍 Debug - Type de rôle:', typeof req.user.role);
+    
     if (req.user.role !== 'administrateur') {
         return res.status(403).json({
             success: false,
