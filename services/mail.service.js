@@ -1,6 +1,6 @@
 const nodemailer = require('nodemailer');
 const { User } = require('../models');
-const { MailHistory } = require('../models/mailhistory.model');
+const MailHistory = require('../models/mailhistory.model');
 
 // Configuration du transporteur email
 const createTransporter = () => {
