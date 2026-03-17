@@ -1,19 +1,19 @@
-const nodemailer = require('nodemailer');
+const { createTransport } = require('nodemailer');
 const { User } = require('../models');
 const MailHistory = require('../models/mailhistory.model');
 
 // Configuration du transporteur email
 const createTransporter = () => {
-    return nodemailer.createTransporter({
+    return createTransport({
         host: process.env.SMTP_HOST || 'smtp.gmail.com',
-        port: process.env.SMTP_PORT || 587,
-        secure: process.env.SMTP_SECURE === 'true', // true for 465, false for other ports
+        port: parseInt(process.env.SMTP_PORT) || 587,
+        secure: process.env.SMTP_SECURE === 'true',
         auth: {
             user: process.env.SMTP_USER,
             pass: process.env.SMTP_PASS
         },
         tls: {
-            rejectUnauthorized: false // Pour les environnements de développement
+            rejectUnauthorized: false
         }
     });
 };
