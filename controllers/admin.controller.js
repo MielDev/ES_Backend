@@ -1,4 +1,5 @@
-const { sequelize, Op, AdminConfig, User, Appointment, Payment, Slot, Affiche } = require('../models');
+const { sequelize, AdminConfig, User, Appointment, Payment, Slot, IntervalSlot, Affiche, SystemSetting, AcademicYearStats } = require('../models');
+const { Op } = require('sequelize');
 const path = require('path');
 const fs = require('fs');
 const multer = require('multer');
@@ -18,7 +19,6 @@ const transporter = nodemailer.createTransport({
     }
 });
 
-// Marquer les rendez-vous non validés comme manqués
 // Marquer les rendez-vous non validés comme manqués
 exports.markMissedAppointments = async (req, res) => {
     console.log('=== DÉBUT CLÔTURE JOURNÉE ===');
@@ -573,6 +573,8 @@ exports.validateAppointment = async (req, res) => {
         const appointment = await Appointment.findByPk(id, { include: [User] });
         if (!appointment) return res.status(404).json({ message: 'Rendez-vous non trouvé' });
 
+        const oldStatus = appointment.status;
+
         await appointment.update({
             status,
             note_admin,
@@ -580,14 +582,26 @@ exports.validateAppointment = async (req, res) => {
             date_validation_admin: new Date()
         });
 
-        // Incrémenter les passages utilisés si validé
-        if (status === 'validé_admin') {
-            await appointment.User.update({
-                passages_utilises: appointment.User.passages_utilises + 1
-            });
+        // Si le statut passe d'un état "confirmé" ou "validé_admin" à "annulé"
+        // On rend le passage à l'utilisateur et on libère la place dans le créneau
+        if ((oldStatus === 'confirmé' || oldStatus === 'validé_admin') && status === 'annulé') {
+            if (appointment.User) {
+                await appointment.User.decrement('passages_utilises');
+                if (appointment.User.passages_utilises < 0) {
+                    await appointment.User.update({ passages_utilises: 0 });
+                }
+            }
+            
+            if (appointment.intervalSlotId) {
+                const { IntervalSlot } = require('../models');
+                await IntervalSlot.update(
+                    { places_restantes: require('sequelize').literal('places_restantes + 1') },
+                    { where: { id: appointment.intervalSlotId } }
+                );
+            }
         }
 
-        res.json({ message: 'Rendez-vous validé', appointment });
+        res.json({ message: 'Rendez-vous mis à jour avec succès', appointment });
     } catch (err) {
         console.error(err);
         res.status(500).json({ message: 'Erreur validation rendez-vous' });
@@ -815,10 +829,247 @@ exports.deleteUser = async (req, res) => {
     }
 };
 
+// Gestion des paramètres système
+exports.getSystemSettings = async (req, res) => {
+    try {
+        const settings = await SystemSetting.findAll();
+        const settingsMap = settings.reduce((acc, curr) => {
+            acc[curr.key] = curr.value;
+            return acc;
+        }, {});
+        
+        // S'assurer que le quota par défaut existe
+        if (!settingsMap['default_passages_quota']) {
+            settingsMap['default_passages_quota'] = "2";
+        }
+        
+        res.json(settingsMap);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Erreur lors de la récupération des paramètres' });
+    }
+};
+
+exports.updateSystemSetting = async (req, res) => {
+    try {
+        const { key, value } = req.body;
+        
+        if (!key || value === undefined) {
+            return res.status(400).json({ message: 'Clé et valeur sont obligatoires' });
+        }
+        
+        const [setting, created] = await SystemSetting.findOrCreate({
+            where: { key },
+            defaults: { value: String(value) }
+        });
+        
+        if (!created) {
+            await setting.update({ value: String(value) });
+        }
+        
+        res.json({ message: 'Paramètre mis à jour', setting });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Erreur lors de la mise à jour du paramètre' });
+    }
+};
+
+// --- Maintenance Annuelle ---
+
+/**
+ * Archive les statistiques de l'année en cours et réinitialise les justificatifs
+ */
+exports.archiveAndResetAcademicYear = async (req, res) => {
+    const transaction = await sequelize.transaction();
+    try {
+        const { academicYear } = req.body; // ex: "2025-2026"
+        if (!academicYear) {
+            await transaction.rollback();
+            return res.status(400).json({ message: 'L\'année académique est obligatoire' });
+        }
+
+        // 1. Calculer les statistiques actuelles
+        const oneYearAgo = new Date();
+        oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+        // On compte uniquement les étudiants qui ne sont pas inactifs depuis plus d'un an
+        const totalStudents = await User.count({ 
+            where: { 
+                role: 'utilisateur', 
+                isDeleted: false,
+                [Op.not]: {
+                    justificatif_status: 'en_attente',
+                    [Op.or]: [
+                        { date_derniere_validation: { [Op.lt]: oneYearAgo } },
+                        { date_derniere_validation: null, createdAt: { [Op.lt]: oneYearAgo } }
+                    ]
+                }
+            }, 
+            transaction 
+        });
+        
+        // "Passages" = Rendez-vous qui ont effectivement eu lieu (validés ou terminés)
+        const totalPassages = await Appointment.count({ 
+            where: { 
+                [Op.or]: [
+                    { status: { [Op.in]: ['validé_admin', 'terminé'] } },
+                    { valide_par_admin: true }
+                ]
+            }, 
+            transaction 
+        });
+        
+        // "Rdv Absents" = Rendez-vous marqués comme manqués
+        const totalMissed = await Appointment.count({ 
+            where: { status: 'manqué' }, 
+            transaction 
+        });
+        
+        // "Rdv Annulés" = Rendez-vous annulés
+        const totalCancelled = await Appointment.count({ 
+            where: { status: 'annulé' }, 
+            transaction 
+        });
+        
+        // "Payés" = Étudiants ayant payé leur cotisation (champ paiement à true)
+        const totalPaid = await User.count({ 
+            where: { 
+                paiement: true, 
+                role: 'utilisateur',
+                isDeleted: false
+            }, 
+            transaction 
+        });
+
+        // "Créneaux" = Nombre total de créneaux créés durant l'année
+        const totalSlots = await Slot.count({ transaction });
+
+        // 2. Créer l'archive
+        await AcademicYearStats.create({
+            academic_year: academicYear,
+            total_students: totalStudents,
+            total_confirmed_passages: totalPassages,
+            total_cancelled_appointments: totalCancelled,
+            total_missed_appointments: totalMissed,
+            total_students_paid: totalPaid,
+            total_slots_created: totalSlots
+        }, { transaction });
+
+        // 3. Suppression des fichiers justificatifs physiques
+        const usersWithDocs = await User.findAll({
+            where: { justificatif_path: { [Op.ne]: null } },
+            transaction
+        });
+
+        for (const user of usersWithDocs) {
+            if (user.justificatif_path) {
+                const filePath = path.join(__dirname, '../uploads', user.justificatif_path);
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                }
+            }
+        }
+
+        // 4. Réinitialiser les utilisateurs (paiement, justificatifs, passages)
+        await User.update({
+            justificatif_status: 'en_attente',
+            justificatif_path: null,
+            paiement: false,
+            passages_utilises: 0,
+            justificatif_commentaire: `Réinitialisation annuelle académique ${academicYear}. Veuillez fournir un nouveau justificatif.`
+        }, { 
+            where: { role: 'utilisateur' },
+            transaction 
+        });
+
+        // 5. Supprimer tous les rendez-vous, paiements et créneaux
+        await Appointment.destroy({ where: {}, transaction });
+        await Payment.destroy({ where: {}, transaction });
+        await IntervalSlot.destroy({ where: {}, transaction });
+        await Slot.destroy({ where: {}, transaction });
+
+        await transaction.commit();
+        res.json({ 
+            message: `Année académique ${academicYear} archivée. Données réinitialisées (Justificatifs, RDV, Créneaux, Paiements).`,
+            stats: { 
+                totalStudents, 
+                totalPassages, 
+                totalCancelled, 
+                totalMissed, 
+                totalPaid,
+                totalSlots
+            }
+        });
+    } catch (err) {
+        if (transaction) await transaction.rollback();
+        console.error(err);
+        res.status(500).json({ message: 'Erreur lors de la maintenance annuelle' });
+    }
+};
+
+/**
+ * Supprime manuellement les étudiants qui n'ont pas mis à jour leur justificatif depuis plus d'un an
+ */
+exports.cleanupInactiveStudents = async (req, res) => {
+    try {
+        const oneYearAgo = new Date();
+        oneYearAgo.setFullYear(oneYearAgo.getFullYear() - 1);
+
+        // Trouver les utilisateurs qui n'ont pas été validés depuis plus d'un an 
+        // ET qui sont toujours "en attente" (donc n'ont pas agi suite à la réinitialisation)
+        const studentsToDelete = await User.findAll({
+            where: {
+                role: 'utilisateur',
+                justificatif_status: 'en_attente',
+                [Op.or]: [
+                    { date_derniere_validation: { [Op.lt]: oneYearAgo } },
+                    { date_derniere_validation: null, createdAt: { [Op.lt]: oneYearAgo } }
+                ]
+            }
+        });
+
+        const count = studentsToDelete.length;
+        
+        for (const student of studentsToDelete) {
+            // Supprimer les fichiers
+            if (student.justificatif_path) {
+                const filePath = path.join(__dirname, '../uploads', student.justificatif_path);
+                if (fs.existsSync(filePath)) {
+                    fs.unlinkSync(filePath);
+                }
+            }
+            // Suppression définitive (on ne fait pas de soft delete ici pour le nettoyage annuel)
+            await student.destroy({ force: true });
+        }
+
+        res.json({ 
+            message: `${count} étudiants inactifs depuis plus d'un an ont été supprimés.`,
+            count 
+        });
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Erreur lors du nettoyage des étudiants' });
+    }
+};
+
+/**
+ * Récupère l'historique des statistiques par année
+ */
+exports.getAcademicHistory = async (req, res) => {
+    try {
+        const history = await AcademicYearStats.findAll({ order: [['academic_year', 'DESC']] });
+        res.json(history);
+    } catch (err) {
+        console.error(err);
+        res.status(500).json({ message: 'Erreur récupération historique' });
+    }
+};
+
+// --- Fin Maintenance Annuelle ---
+
 // Récupérer les rendez-vous non validés
 exports.getUnvalidatedAppointments = async (req, res) => {
     try {
-        const { Op } = require('sequelize');
         const now = new Date();
         const oneHourAgo = new Date(now.getTime() - 60 * 60 * 1000);
 
@@ -840,7 +1091,7 @@ exports.getUnvalidatedAppointments = async (req, res) => {
                 {
                     model: User,
                     attributes: { exclude: ['password'] },
-                    where: { is_active: true } // Seulement les utilisateurs actifs
+                    where: { isActive: true } // Seulement les utilisateurs actifs
                 },
                 {
                     model: Slot,

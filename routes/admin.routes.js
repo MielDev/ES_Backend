@@ -24,6 +24,15 @@ router.get('/appointments/unvalidated', auth, isAdmin, adminCtrl.getUnvalidatedA
 router.patch('/appointments/:id/validate', auth, isAdmin, adminCtrl.validateAppointment);
 router.patch('/appointments/mark-missed', auth, isAdmin, adminCtrl.markMissedAppointments);
 
+// Paramètres système
+router.get('/settings', auth, isAdmin, adminCtrl.getSystemSettings);
+router.post('/settings', auth, isAdmin, adminCtrl.updateSystemSetting);
+
+// Maintenance annuelle
+router.post('/maintenance/archive', auth, isAdmin, adminCtrl.archiveAndResetAcademicYear);
+router.post('/maintenance/cleanup', auth, isAdmin, adminCtrl.cleanupInactiveStudents);
+router.get('/maintenance/history', auth, isAdmin, adminCtrl.getAcademicHistory);
+
 // Gestion des justificatifs étudiants
 router.get('/users/pending-validation', auth, isAdmin, adminCtrl.getUsersPendingValidation);
 router.get('/users/:id/justificatif', auth, isAdmin, adminCtrl.getStudentJustificatifInfo);

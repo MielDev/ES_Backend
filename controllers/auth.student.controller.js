@@ -1,4 +1,4 @@
-const { User } = require('../models');
+const { User, SystemSetting } = require('../models');
 const { Op } = require('sequelize');
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
@@ -73,6 +73,17 @@ exports.registerStudent = async (req, res) => {
             // else on peut ignorer ou renvoyer une erreur selon le besoin
         }
 
+        // Récupérer le quota de passages par défaut depuis les paramètres système
+        let passagesQuota = 2; // Valeur par défaut
+        try {
+            const setting = await SystemSetting.findOne({ where: { key: 'default_passages_quota' } });
+            if (setting && setting.value) {
+                passagesQuota = parseInt(setting.value);
+            }
+        } catch (err) {
+            console.error('Erreur lors de la récupération du quota par défaut:', err);
+        }
+
         // Créer l'utilisateur (ne plus inclure paiement)
         const user = await User.create({
             nom,
@@ -84,6 +95,7 @@ exports.registerStudent = async (req, res) => {
             specialite,
             date_naissance: parsedDateNaissance,
             nationalite,
+            passages_max_autorises: passagesQuota,
             // paiement non défini ici : la colonne DB reste avec sa valeur par défaut (false)
             justificatif_path: req.file.filename,
             justificatif_status: 'en_attente',

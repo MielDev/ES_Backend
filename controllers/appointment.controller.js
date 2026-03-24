@@ -116,6 +116,9 @@ exports.bookAppointment = async (req, res) => {
             existingAppointment.heure_fin = intervalSlot.heure_fin;
             await existingAppointment.save();
 
+            // Incrémenter à nouveau les passages utilisés
+            await user.increment('passages_utilises');
+
             await intervalSlot.decrement('places_restantes');
 
             return res.json({

@@ -1,124 +1,204 @@
 require('dotenv').config({ path: '../.env' });
 const sequelize = require('../config/db');
 const bcrypt = require('bcryptjs');
-const { User, Slot, AdminConfig, Payment, Appointment } = require('../models');
+const { User, Slot, AdminConfig, Payment, Appointment, IntervalSlot, SystemSetting } = require('../models');
 
 async function seed() {
-    // Désactiver les vérifications de clés étrangères pour pouvoir supprimer les tables
+    console.log('--- DÉBUT DU SEEDING ---');
+    // Désactiver les vérifications de clés étrangères
     await sequelize.query('SET FOREIGN_KEY_CHECKS = 0', { raw: true });
-    
-    await sequelize.sync({ force: true }); // attention: supprime les données existantes
-    
-    // Réactiver les vérifications de clés étrangères
+    await sequelize.sync({ force: true });
     await sequelize.query('SET FOREIGN_KEY_CHECKS = 1', { raw: true });
 
-    const hashed = await bcrypt.hash('Admin123!', 10);
-    const admin = await User.create({ nom: 'Admin', prenom: 'Root', email: 'admin@medibook.local', password: hashed, role: 'admin' });
-    console.log('Admin créé:', admin.email);
+    // 1. Créer les paramètres système
+    await SystemSetting.create({ key: 'default_passages_quota', value: '2', description: 'Nombre de passages gratuits par défaut' });
+    console.log('Paramètres système créés');
 
-    // Créer des utilisateurs normaux
-    const hashedUser1 = await bcrypt.hash('User123!', 10);
-    const hashedUser2 = await bcrypt.hash('User456!', 10);
+    // 2. Créer l'Admin
+    const hashedAdmin = await bcrypt.hash('Admin123!', 10);
+    await User.create({
+        nom: 'Admin',
+        prenom: 'Root',
+        email: 'admin@medibook.local',
+        password: hashedAdmin,
+        role: 'admin'
+    });
+    console.log('Admin créé');
 
-    const user1 = await User.create({
-        nom: 'Martin',
-        prenom: 'Jean',
-        email: 'jean.martin@email.com',
-        password: hashedUser1,
+    // 2b. Créer l'utilisateur spécifique demandé
+    const hashedSpecific = await bcrypt.hash('mpompompo', 10);
+    await User.create({
+        nom: 'Moignon',
+        prenom: 'User',
+        email: 'moignon168@gmail.com',
+        password: hashedSpecific,
         role: 'utilisateur',
         isActive: true,
         passages_utilises: 0,
         passages_max_autorises: 2,
-        telephone: '06.12.34.56.78',
-        ecole_universite: 'Université du Mans',
-        specialite: 'Informatique',
         justificatif_status: 'validé',
         date_derniere_validation: new Date(),
         date_inscription: new Date()
     });
+    console.log('Utilisateur moignon168@gmail.com créé');
 
-    const user2 = await User.create({
-        nom: 'Dubois',
-        prenom: 'Marie',
-        email: 'marie.dubois@email.com',
-        password: hashedUser2,
-        role: 'utilisateur',
-        isActive: false, // utilisateur désactivé
-        passages_utilises: 1,
-        passages_max_autorises: 1,
-        telephone: '06.98.76.54.32',
-        ecole_universite: 'IUT du Mans',
-        specialite: 'Gestion',
-        justificatif_status: 'en_attente',
-        date_derniere_validation: new Date(),
-        date_inscription: new Date()
-    });
+    // 3. Créer beaucoup d'utilisateurs (30 étudiants)
+    const users = [];
+    const hashedUser = await bcrypt.hash('User123!', 10);
+    const noms = ['Martin', 'Bernard', 'Thomas', 'Petit', 'Robert', 'Richard', 'Durand', 'Dubois', 'Moreau', 'Laurent', 'Simon', 'Michel', 'Lefebvre', 'Leroy', 'Roux', 'David', 'Bertrand', 'Morel', 'Fournier', 'Girard', 'Bonnet', 'Dupont', 'Lambert', 'Fontaine', 'Rousseau', 'Vincent', 'Muller', 'Lefevre', 'Faure', 'Andre'];
+    const prenoms = ['Jean', 'Marie', 'Pierre', 'Anne', 'Michel', 'Catherine', 'Philippe', 'Isabelle', 'Françoise', 'Alain', 'Nicolas', 'Christophe', 'Benoit', 'Stéphane', 'David', 'Jérôme', 'Guillaume', 'Sébastien', 'Aurélie', 'Julie', 'Céline', 'Élodie', 'Sandrine', 'Émilie', 'Sophie', 'Mathieu', 'Romain', 'Julien', 'Anthony', 'Kévin'];
+    const ecoles = ['Université du Mans', 'IUT du Mans', 'ISMANS', 'ESGT', 'ENSIM'];
+    const specialites = ['Informatique', 'Gestion', 'Mécanique', 'Acoustique', 'Géomatique', 'Électronique'];
 
-    console.log('Utilisateurs créés');
-
-    // Configuration admin pour les créneaux
-    const configs = [
-        { date_specifique: '2025-01-06', heure_debut: '08:00', heure_fin: '12:00' }, // lundi
-        { date_specifique: '2025-01-07', heure_debut: '09:00', heure_fin: '16:00' }, // mardi
-        { date_specifique: '2025-01-09', heure_debut: '10:00', heure_fin: '15:00' }, // jeudi
-        { date_specifique: '2025-01-10', heure_debut: '08:30', heure_fin: '11:30' }, // vendredi
-    ];
-
-    for (const config of configs) {
-        await AdminConfig.create(config);
+    for (let i = 0; i < 30; i++) {
+        const user = await User.create({
+            nom: noms[i % noms.length],
+            prenom: prenoms[i % prenoms.length],
+            email: `student${i + 1}@example.com`,
+            password: hashedUser,
+            role: 'utilisateur',
+            isActive: i % 10 !== 0, // 90% actifs
+            passages_utilises: Math.floor(Math.random() * 3),
+            passages_max_autorises: 2,
+            telephone: `06${Math.floor(10000000 + Math.random() * 90000000)}`,
+            ecole_universite: ecoles[Math.floor(Math.random() * ecoles.length)],
+            specialite: specialites[Math.floor(Math.random() * specialites.length)],
+            justificatif_status: i % 5 === 0 ? 'en_attente' : 'validé',
+            date_derniere_validation: new Date(),
+            date_inscription: new Date(Date.now() - Math.floor(Math.random() * 30) * 24 * 60 * 60 * 1000)
+        });
+        users.push(user);
     }
-    console.log('Configurations admin créées');
+    console.log('30 Utilisateurs créés');
 
-    // Exemple de quelques slots (dates)
-    const slotsData = [
-        { date: '2025-01-06', heure_debut: '08:00:00', heure_fin: '12:00:00', interval_minutes: 15, capacite_par_interval: 5 },
-        { date: '2025-01-06', heure_debut: '09:00:00', heure_fin: '10:00:00', interval_minutes: 15, capacite_par_interval: 3 },
-        { date: '2025-01-07', heure_debut: '10:00:00', heure_fin: '11:00:00', interval_minutes: 15, capacite_par_interval: 3 },
-        { date: '2025-01-09', heure_debut: '10:00:00', heure_fin: '12:00:00', interval_minutes: 15, capacite_par_interval: 4 },
-        { date: '2025-01-09', heure_debut: '11:00:00', heure_fin: '12:00:00', interval_minutes: 15, capacite_par_interval: 2 },
-    ];
-
-    for (const s of slotsData) {
-        await Slot.create(s);
+    // 3b. Créer des étudiants inactifs depuis plus d'un an (pour tester le nettoyage annuel)
+    const twoYearsAgo = new Date();
+    twoYearsAgo.setFullYear(twoYearsAgo.getFullYear() - 2);
+    
+    for (let i = 0; i < 10; i++) {
+        await User.create({
+            nom: noms[(i + 5) % noms.length],
+            prenom: prenoms[(i + 5) % prenoms.length],
+            email: `inactive${i + 1}@example.com`,
+            password: hashedUser,
+            role: 'utilisateur',
+            isActive: true,
+            passages_utilises: 0,
+            passages_max_autorises: 2,
+            telephone: `07${Math.floor(10000000 + Math.random() * 90000000)}`,
+            ecole_universite: ecoles[Math.floor(Math.random() * ecoles.length)],
+            specialite: specialites[Math.floor(Math.random() * specialites.length)],
+            justificatif_status: 'en_attente',
+            date_derniere_validation: null,
+            createdAt: twoYearsAgo,
+            updatedAt: twoYearsAgo,
+            date_inscription: twoYearsAgo
+        });
     }
-    console.log('Slots créés');
+    console.log('10 Étudiants inactifs (depuis 2 ans) créés');
 
-    // Exemples de rendez-vous
-    const appointments = [
-        { userId: user1.id, date_rdv: '2025-01-06', heure_debut: '08:00:00', heure_fin: '08:15:00', status: 'confirmé', note: 'Premier rendez-vous' },
-        { userId: user2.id, date_rdv: '2025-01-06', heure_debut: '09:00:00', heure_fin: '09:15:00', status: 'annulé', note: 'Annulé par l\'utilisateur' },
-        { userId: user1.id, date_rdv: '2025-01-07', heure_debut: '10:00:00', heure_fin: '10:15:00', status: 'annulé', note: 'Annulé définitivement' },
-    ];
-
-    for (const appt of appointments) {
-        await Appointment.create(appt);
+    // 4. Créer des créneaux (Slots) sur 2 semaines
+    const dates = [];
+    const today = new Date();
+    for (let i = -7; i < 14; i++) {
+        const d = new Date(today);
+        d.setDate(today.getDate() + i);
+        if (d.getDay() !== 0 && d.getDay() !== 6) { // Pas le week-end
+            dates.push(d.toISOString().split('T')[0]);
+        }
     }
-    console.log('Rendez-vous créés');
 
-    // Exemples de paiements
-    const payments = [
-        { userId: user1.id, nombre_kilos: 10, prix_total: 5.00, status: 'payé', note: 'Achat du 15/12/2024' },
-        { userId: user2.id, nombre_kilos: 6, prix_total: 3.00, status: 'payé', note: 'Achat du 10/12/2024' },
-        { userId: user1.id, nombre_kilos: 8, prix_total: 4.00, status: 'impayé', note: 'En attente de paiement' },
-    ];
+    const slots = [];
+    for (const date of dates) {
+        // Matin
+        const slot = await Slot.create({
+            date: date,
+            heure_debut: '09:00:00',
+            heure_fin: '12:00:00',
+            interval_minutes: 20,
+            capacite_par_interval: 3,
+            isActive: true
+        });
+        slots.push(slot);
 
-    for (const payment of payments) {
-        await Payment.create(payment);
+        // Créer les IntervalSlots associés (normalement fait par le contrôleur, mais on le simule ici)
+        let startTime = 9 * 60; // 09:00 en minutes
+        const endTime = 12 * 60; // 12:00 en minutes
+        while (startTime < endTime) {
+            const h = Math.floor(startTime / 60);
+            const m = startTime % 60;
+            const hStr = h.toString().padStart(2, '0');
+            const mStr = m.toString().padStart(2, '0');
+            
+            await IntervalSlot.create({
+                slot_parent_id: slot.id,
+                date: date,
+                heure_debut: `${hStr}:${mStr}:00`,
+                heure_fin: `${hStr}:${(m + 20) % 60 === 0 ? (h + 1).toString().padStart(2, '0') : hStr}:${(m + 20) % 60 === 0 ? '00' : (m + 20).toString().padStart(2, '0')}:00`,
+                capacite_max: 3,
+                places_restantes: 3,
+                isActive: true
+            });
+            startTime += 20;
+        }
     }
-    console.log('Paiements créés');
+    console.log(`${dates.length} Jours de créneaux créés`);
 
-    console.log('\n=== DONNÉES DE TEST CRÉÉES ===');
+    // 5. Créer des rendez-vous (Appointments)
+    const intervalSlots = await IntervalSlot.findAll();
+    for (let i = 0; i < 50; i++) {
+        const randomUser = users[Math.floor(Math.random() * users.length)];
+        const randomInterval = intervalSlots[Math.floor(Math.random() * intervalSlots.length)];
+        
+        const statusOptions = ['confirmé', 'annulé', 'manqué', 'validé_admin'];
+        const status = statusOptions[Math.floor(Math.random() * statusOptions.length)];
+
+        await Appointment.create({
+            userId: randomUser.id,
+            intervalSlotId: randomInterval.id,
+            date_rdv: randomInterval.date,
+            heure_debut: randomInterval.heure_debut,
+            heure_fin: randomInterval.heure_fin,
+            status: status,
+            note: i % 5 === 0 ? 'Besoin de produits frais' : '',
+            valide_par_admin: status === 'validé_admin'
+        });
+
+        if (status === 'confirmé' || status === 'validé_admin') {
+            await randomInterval.decrement('places_restantes');
+        }
+    }
+    console.log('50 Rendez-vous créés');
+
+    // 6. Créer des paiements
+    for (let i = 0; i < 15; i++) {
+        const randomUser = users[Math.floor(Math.random() * users.length)];
+        const kilos = Math.floor(Math.random() * 15) + 5;
+        const status = Math.random() > 0.2 ? 'payé' : 'impayé';
+        
+        await Payment.create({
+            userId: randomUser.id,
+            nombre_kilos: kilos,
+            prix_total: (kilos * 0.5).toFixed(2),
+            status: status,
+            note: 'Paiement mensuel'
+        });
+
+        // Simuler le fait que certains utilisateurs ont payé leur cotisation annuelle
+        if (status === 'payé' && Math.random() > 0.5) {
+            await randomUser.update({ paiement: true });
+        }
+    }
+    console.log('15 Paiements créés');
+
+    console.log('\n=== SEEDING TERMINÉ AVEC SUCCÈS ===');
     console.log('Admin: admin@medibook.local / Admin123!');
-    console.log('User1: jean.martin@email.com / User123! (actif, Université du Mans - Informatique - justificatif validé)');
-    console.log('User2: marie.dubois@email.com / User456! (inactif, IUT du Mans - Gestion - justificatif en attente)');
-    console.log('Configurations: lundi, mardi, jeudi actifs');
-    console.log('Rendez-vous: 3 exemples (confirmé, annulé, annulé)');
-    console.log('Paiements: 3 exemples créés');
-
+    console.log('Étudiants: student1@example.com à student30@example.com / User123!');
+    
     process.exit(0);
 }
 
 seed().catch(err => {
-    console.error(err);
+    console.error('ERREUR LORS DU SEEDING:', err);
     process.exit(1);
 });

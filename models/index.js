@@ -7,6 +7,8 @@ const Appointment = require('./appointment.model');
 const AdminConfig = require('./adminconfig.model');
 const Payment = require('./payment.model');
 const Affiche = require('./affiche.model');
+const SystemSetting = require('./systemsetting.model');
+const AcademicYearStats = require('./academicyearstats.model');
 
 // relations
 User.hasMany(Appointment, { foreignKey: 'userId' });
@@ -25,5 +27,5 @@ User.hasMany(Payment, { foreignKey: 'userId' });
 Payment.belongsTo(User, { foreignKey: 'userId' });
 
 module.exports = {
-    sequelize, User, Admin, Slot, IntervalSlot, Appointment, AdminConfig, Payment, Affiche
+    sequelize, User, Admin, Slot, IntervalSlot, Appointment, AdminConfig, Payment, Affiche, SystemSetting, AcademicYearStats
 };
