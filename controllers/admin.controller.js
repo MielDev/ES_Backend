@@ -518,7 +518,65 @@ exports.updateUser = async (req, res) => {
             isDeleted: isDeleted !== undefined ? isDeleted : user.isDeleted
         };
 
+        const oldActiveStatus = user.isActive;
         await user.update(updatedFields);
+
+        // Envoi d'un email si l'utilisateur est désactivé manuellement via le formulaire
+        if (oldActiveStatus === true && updatedFields.isActive === false && user.email) {
+            try {
+                // S'assurer qu'une date de sanction existe si elle n'est pas fournie
+                let sanctionUntil = user.sanction_until;
+                if (!sanctionUntil) {
+                    sanctionUntil = new Date();
+                    sanctionUntil.setDate(sanctionUntil.getDate() + 14);
+                    await user.update({ sanction_until: sanctionUntil });
+                }
+
+                await transporter.sendMail({
+                    from: process.env.SMTP_FROM,
+                    to: user.email,
+                    subject: 'Notification : Suspension temporaire de votre compte - Épicerie Solidaire',
+                    html: `
+                        <!DOCTYPE html>
+                        <html lang="fr">
+                        <head>
+                            <meta charset="UTF-8">
+                            <style>
+                                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                                .container { max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px; }
+                                .header { background-color: #DF7841; color: white; padding: 10px; text-align: center; border-radius: 10px 10px 0 0; }
+                                .content { padding: 20px; }
+                                .footer { text-align: center; font-size: 12px; color: #777; margin-top: 20px; }
+                                .important { color: #DF7841; font-weight: bold; }
+                            </style>
+                        </head>
+                        <body>
+                            <div class="container">
+                                <div class="header">
+                                    <h1>Épicerie Solidaire</h1>
+                                </div>
+                                <div class="content">
+                                    <p>Bonjour <strong>${user.prenom} ${user.nom}</strong>,</p>
+                                    <p>Nous vous informons que votre compte a été <span class="important">temporairement suspendu</span> par l'administration.</p>
+                                    <p>Cette mesure fait généralement suite à des absences répétées à vos rendez-vous sans annulation préalable.</p>
+                                    <p>Votre compte sera automatiquement réactivé le : <strong>${new Date(sanctionUntil).toLocaleDateString('fr-FR')}</strong>.</p>
+                                    <p>À partir de cette date, vous pourrez à nouveau vous connecter et réserver vos créneaux.</p>
+                                    <p>Nous vous rappelons qu'il est important d'annuler vos rendez-vous à l'avance si vous ne pouvez pas vous présenter, afin de libérer la place pour d'autres étudiants.</p>
+                                    <p>Cordialement,<br>L'équipe de l'Épicerie Solidaire</p>
+                                </div>
+                                <div class="footer">
+                                    <p>Ceci est un message automatique, merci de ne pas y répondre.</p>
+                                </div>
+                            </div>
+                        </body>
+                        </html>
+                    `
+                });
+                console.log(`Email de sanction envoyé à ${user.email} (via modification profil)`);
+            } catch (emailErr) {
+                console.error(`Erreur lors de l'envoi de l'email de sanction: ${emailErr.message}`);
+            }
+        }
 
         // Retourner l'utilisateur mis à jour sans le mot de passe
         const updatedUser = await User.findByPk(id, {
@@ -580,6 +638,57 @@ exports.toggleUserActive = async (req, res) => {
         }
 
         await user.update(updateData);
+
+        // Envoi d'un email en cas de désactivation (sanction)
+        if (newActiveStatus === false && user.email) {
+            try {
+                const sanctionUntil = updateData.sanction_until;
+                await transporter.sendMail({
+                    from: process.env.SMTP_FROM,
+                    to: user.email,
+                    subject: 'Notification : Suspension temporaire de votre compte - Épicerie Solidaire',
+                    html: `
+                        <!DOCTYPE html>
+                        <html lang="fr">
+                        <head>
+                            <meta charset="UTF-8">
+                            <style>
+                                body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+                                .container { max-width: 600px; margin: 0 auto; padding: 20px; border: 1px solid #eee; border-radius: 10px; }
+                                .header { background-color: #DF7841; color: white; padding: 10px; text-align: center; border-radius: 10px 10px 0 0; }
+                                .content { padding: 20px; }
+                                .footer { text-align: center; font-size: 12px; color: #777; margin-top: 20px; }
+                                .important { color: #DF7841; font-weight: bold; }
+                            </style>
+                        </head>
+                        <body>
+                            <div class="container">
+                                <div class="header">
+                                    <h1>Épicerie Solidaire</h1>
+                                </div>
+                                <div class="content">
+                                    <p>Bonjour <strong>${user.prenom} ${user.nom}</strong>,</p>
+                                    <p>Nous vous informons que votre compte a été <span class="important">temporairement suspendu</span> par l'administration.</p>
+                                    <p>Cette mesure fait généralement suite à des absences répétées à vos rendez-vous sans annulation préalable.</p>
+                                    <p>Votre compte sera automatiquement réactivé le : <strong>${new Date(sanctionUntil).toLocaleDateString('fr-FR')}</strong>.</p>
+                                    <p>À partir de cette date, vous pourrez à nouveau vous connecter et réserver vos créneaux.</p>
+                                    <p>Nous vous rappelons qu'il est important d'annuler vos rendez-vous à l'avance si vous ne pouvez pas vous présenter, afin de libérer la place pour d'autres étudiants.</p>
+                                    <p>Cordialement,<br>L'équipe de l'Épicerie Solidaire</p>
+                                </div>
+                                <div class="footer">
+                                    <p>Ceci est un message automatique, merci de ne pas y répondre.</p>
+                                </div>
+                            </div>
+                        </body>
+                        </html>
+                    `
+                });
+                console.log(`Email de sanction envoyé à ${user.email}`);
+            } catch (emailErr) {
+                console.error(`Erreur lors de l'envoi de l'email de sanction: ${emailErr.message}`);
+            }
+        }
+
         res.json({ message: `Utilisateur ${newActiveStatus ? 'activé' : 'désactivé'}`, user });
     } catch (err) {
         console.error(err);
