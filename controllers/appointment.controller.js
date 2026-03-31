@@ -23,7 +23,12 @@ exports.bookAppointment = async (req, res) => {
         // Vérifier que l'utilisateur est actif
         const user = await User.findByPk(userId);
         if (!user || !user.isActive) {
-            return res.status(403).json({ message: 'Votre compte est désactivé veillez contacter un administrateur' });
+            if (user && user.sanction_until && !user.isSanctionOver) {
+                return res.status(403).json({ 
+                    message: `Votre compte est temporairement suspendu en raison d'absences répétées. Il sera réactivé dans ${user.remainingSanctionDays} jour(s) (le ${new Date(user.sanction_until).toLocaleDateString('fr-FR')}).` 
+                });
+            }
+            return res.status(403).json({ message: 'Votre compte est désactivé. Veuillez contacter un administrateur.' });
         }
 
         const intervalSlot = await IntervalSlot.findByPk(intervalSlotId, {

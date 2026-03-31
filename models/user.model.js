@@ -105,6 +105,38 @@ const User = sequelize.define('User', {
         type: DataTypes.BOOLEAN,
         defaultValue: false,
         index: true
+    },
+    nb_absences_total: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0
+    },
+    nb_absences_depuis_derniere_sanction: {
+        type: DataTypes.INTEGER,
+        defaultValue: 0
+    },
+    sanction_until: {
+        type: DataTypes.DATE,
+        allowNull: true
+    },
+    // Champ virtuel pour savoir si la sanction est terminée
+    isSanctionOver: {
+        type: DataTypes.VIRTUAL,
+        get() {
+            if (!this.sanction_until) return true;
+            return new Date() >= new Date(this.sanction_until);
+        }
+    },
+    // Nombre de jours restants avant la fin de la sanction
+    remainingSanctionDays: {
+        type: DataTypes.VIRTUAL,
+        get() {
+            if (!this.sanction_until) return 0;
+            const now = new Date();
+            const until = new Date(this.sanction_until);
+            if (now >= until) return 0;
+            const diffTime = until.getTime() - now.getTime();
+            return Math.ceil(diffTime / (1000 * 60 * 60 * 24));
+        }
     }
 }, {
     timestamps: true,

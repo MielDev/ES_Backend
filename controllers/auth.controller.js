@@ -26,7 +26,24 @@ exports.login = async (req, res) => {
         const user = await User.findOne({ where: { email } });
         if (!user) return res.status(404).json({ message: 'Utilisateur non trouvé' });
 
-        if (!user.isActive) return res.status(403).json({ message: 'Compte désactivé' });
+        // Vérification du statut actif et gestion des sanctions pour absences
+        if (!user.isActive) {
+            if (user.sanction_until) {
+                if (!user.isSanctionOver) {
+                    return res.status(403).json({ 
+                        message: `Votre compte est temporairement suspendu en raison d'absences répétées. Il sera réactivé dans ${user.remainingSanctionDays} jour(s) (le ${new Date(user.sanction_until).toLocaleDateString('fr-FR')}).` 
+                    });
+                } else {
+                    // La sanction est terminée, on réactive le compte lors de la tentative de connexion
+                    user.isActive = true;
+                    user.nb_absences_depuis_derniere_sanction = 0;
+                    user.sanction_until = null;
+                    await user.save();
+                }
+            } else {
+                return res.status(403).json({ message: 'Votre compte est désactivé. Veuillez contacter un administrateur.' });
+            }
+        }
 
         const ok = await bcrypt.compare(password, user.password);
         if (!ok) return res.status(401).json({ message: 'Mot de passe incorrect' });

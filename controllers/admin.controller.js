@@ -30,12 +30,15 @@ exports.markMissedAppointments = async (req, res) => {
         const now = new Date();
         const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
         const todayStr = today.toISOString().split('T')[0];
+        const currentTime = now.getHours().toString().padStart(2, '0') + ':' + 
+                           now.getMinutes().toString().padStart(2, '0') + ':00';
 
         console.log('Date actuelle:', now.toISOString());
+        console.log('Heure actuelle:', currentTime);
         console.log('Date de comparaison:', todayStr);
 
-        // 1. Trouver les rendez-vous non validés dont la date est passée
-        // ✅ RETIRER deletedAt IS NULL
+        // 1. Trouver les rendez-vous non validés dont la date/heure est passée
+        // ✅ On prend ceux des jours précédents OU d'aujourd'hui si l'heure de fin est passée
         const appointments = await sequelize.query(
             `SELECT 
                 id,
@@ -49,9 +52,12 @@ exports.markMissedAppointments = async (req, res) => {
              FROM Appointments 
              WHERE status = 'confirmé' 
              AND (valide_par_admin = 0 OR valide_par_admin = false OR valide_par_admin IS NULL)
-             AND DATE(date_rdv) < :today`,
+             AND (
+                 DATE(date_rdv) < :today 
+                 OR (DATE(date_rdv) = :today AND heure_fin <= :currentTime)
+             )`,
             {
-                replacements: { today: todayStr },
+                replacements: { today: todayStr, currentTime: currentTime },
                 type: sequelize.QueryTypes.SELECT,
                 transaction
             }
@@ -107,6 +113,28 @@ exports.markMissedAppointments = async (req, res) => {
 
         // Récupérer les informations des utilisateurs
         const userIds = [...new Set(appointments.map(a => a.userId).filter(Boolean))];
+
+        // 3b. Mettre à jour les compteurs d'absences des utilisateurs
+        if (userIds.length > 0) {
+            for (const userId of userIds) {
+                const missedCount = appointments.filter(a => a.userId === parseInt(userId)).length;
+                
+                // Récupérer l'utilisateur pour vérifier son compteur de récidive
+                const user = await User.findByPk(userId, { transaction });
+                
+                if (user) {
+                    const newRecentMissed = user.nb_absences_depuis_derniere_sanction + missedCount;
+                    const updateData = {
+                        nb_absences_total: user.nb_absences_total + missedCount,
+                        nb_absences_depuis_derniere_sanction: newRecentMissed,
+                        updatedAt: new Date()
+                    };
+
+                    await user.update(updateData, { transaction });
+                }
+            }
+            console.log(`Compteurs d'absences et sanctions mis à jour pour ${userIds.length} utilisateurs`);
+        }
         const users = await User.findAll({
             where: { id: userIds },
             attributes: ['id', 'nom', 'prenom', 'email'],
@@ -235,7 +263,7 @@ exports.markMissedAppointments = async (req, res) => {
         if (slotIds.length > 0) {
             // ✅ RETIRER deletedAt IS NULL
             await sequelize.query(
-                `UPDATE Slots 
+                `UPDATE IntervalSlots 
                  SET isActive = 0, 
                      updatedAt = NOW() 
                  WHERE id IN (:slotIds)`,
@@ -537,8 +565,22 @@ exports.toggleUserActive = async (req, res) => {
         const user = await User.findByPk(id);
         if (!user) return res.status(404).json({ message: 'Utilisateur non trouvé' });
 
-        await user.update({ isActive: !user.isActive });
-        res.json({ message: `Utilisateur ${user.isActive ? 'désactivé' : 'activé'}`, user });
+        const newActiveStatus = !user.isActive;
+
+        // Si on RÉACTIVE l'utilisateur, on remet son compteur d'absences récentes à 0 et on efface la date de sanction
+        const updateData = { isActive: newActiveStatus };
+        if (newActiveStatus === true) {
+            updateData.nb_absences_depuis_derniere_sanction = 0;
+            updateData.sanction_until = null;
+        } else {
+            // Si on le DÉSACTIVE manuellement, on peut aussi mettre une sanction par défaut de 14 jours
+            const sanctionUntil = new Date();
+            sanctionUntil.setDate(sanctionUntil.getDate() + 14);
+            updateData.sanction_until = sanctionUntil;
+        }
+
+        await user.update(updateData);
+        res.json({ message: `Utilisateur ${newActiveStatus ? 'activé' : 'désactivé'}`, user });
     } catch (err) {
         console.error(err);
         res.status(500).json({ message: 'Erreur modification utilisateur' });
@@ -581,6 +623,21 @@ exports.validateAppointment = async (req, res) => {
             valide_par_admin: status === 'validé_admin',
             date_validation_admin: new Date()
         });
+
+        // Gestion des compteurs d'absences si marqué comme manqué
+        if (status === 'manqué' && oldStatus !== 'manqué') {
+            const user = await User.findByPk(appointment.userId);
+            if (user) {
+                const newRecentMissed = user.nb_absences_depuis_derniere_sanction + 1;
+                const updateData = {
+                    nb_absences_total: user.nb_absences_total + 1,
+                    nb_absences_depuis_derniere_sanction: newRecentMissed,
+                    updatedAt: new Date()
+                };
+
+                await user.update(updateData);
+            }
+        }
 
         // Si le statut passe d'un état "confirmé" ou "validé_admin" à "annulé"
         // On rend le passage à l'utilisateur et on libère la place dans le créneau

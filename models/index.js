@@ -15,7 +15,7 @@ User.hasMany(Appointment, { foreignKey: 'userId' });
 Appointment.belongsTo(User, { foreignKey: 'userId' });
 
 Slot.hasMany(Appointment, { foreignKey: 'slotId' });
-Appointment.belongsTo(Slot, { foreignKey: 'userId' });
+Appointment.belongsTo(Slot, { foreignKey: 'slotId' });
 
 Slot.hasMany(IntervalSlot, { foreignKey: 'slot_parent_id' });
 IntervalSlot.belongsTo(Slot, { foreignKey: 'slot_parent_id' });
