@@ -27,18 +27,31 @@ exports.markMissedAppointments = async (req, res) => {
     try {
         transaction = await sequelize.transaction();
 
+        const formatLocalDate = (date) => {
+            const year = date.getFullYear();
+            const month = String(date.getMonth() + 1).padStart(2, '0');
+            const day = String(date.getDate()).padStart(2, '0');
+            return `${year}-${month}-${day}`;
+        };
+
         const now = new Date();
-        const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-        const todayStr = today.toISOString().split('T')[0];
-        const currentTime = now.getHours().toString().padStart(2, '0') + ':' + 
-                           now.getMinutes().toString().padStart(2, '0') + ':00';
+        const todayStr = formatLocalDate(now);
+        const requestedDate = typeof req.body?.date === 'string' ? req.body.date : null;
+        const closingDate = /^\d{4}-\d{2}-\d{2}$/.test(requestedDate || '') ? requestedDate : todayStr;
 
         console.log('Date actuelle:', now.toISOString());
-        console.log('Heure actuelle:', currentTime);
-        console.log('Date de comparaison:', todayStr);
+        console.log('Date de clôture:', closingDate);
 
-        // 1. Trouver les rendez-vous non validés dont la date/heure est passée
-        // ✅ On prend ceux des jours précédents OU d'aujourd'hui si l'heure de fin est passée
+        if (closingDate > todayStr) {
+            await transaction.rollback();
+            return res.status(400).json({
+                success: false,
+                message: 'Impossible de clôturer une journée future'
+            });
+        }
+
+        // 1. Trouver tous les rendez-vous confirmés non validés jusqu'à la journée clôturée.
+        // Le bouton de clôture est déjà bloqué avant 19h côté interface, donc on ne dépend pas de heure_fin ici.
         const appointments = await sequelize.query(
             `SELECT 
                 id,
@@ -50,14 +63,11 @@ exports.markMissedAppointments = async (req, res) => {
                 intervalSlotId,
                 userId
              FROM Appointments 
-             WHERE status = 'confirmé' 
+             WHERE status IN ('confirmé', 'confirme')
              AND (valide_par_admin = 0 OR valide_par_admin = false OR valide_par_admin IS NULL)
-             AND (
-                 DATE(date_rdv) < :today 
-                 OR (DATE(date_rdv) = :today AND heure_fin <= :currentTime)
-             )`,
+             AND DATE(date_rdv) <= :closingDate`,
             {
-                replacements: { today: todayStr, currentTime: currentTime },
+                replacements: { closingDate },
                 type: sequelize.QueryTypes.SELECT,
                 transaction
             }
