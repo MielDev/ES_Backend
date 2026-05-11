@@ -1,7 +1,7 @@
 const { Op } = require('sequelize');
 const { sequelize, Slot, IntervalSlot, Appointment } = require('../models');
 
-const CANCELLED_APPOINTMENT_STATUSES = ['annule', 'annul\u00e9'];
+const CANCELLED_APPOINTMENT_STATUSES = ['annule', 'annul\u00e9', 'annulÃ©'];
 
 const normalizeTime = (time) => {
     if (typeof time !== 'string') return null;
@@ -31,6 +31,65 @@ const activeAppointmentWhere = (intervalSlotId) => ({
     intervalSlotId,
     status: { [Op.notIn]: CANCELLED_APPOINTMENT_STATUSES }
 });
+
+const parseOptionalBoolean = (value) => {
+    if (value === undefined) return undefined;
+    if (typeof value === 'boolean') return value;
+    if (value === 'true' || value === 'false') return value === 'true';
+
+    return null;
+};
+
+const findOverlappingInterval = async ({ slotParentId, date, startTime, endTime, excludeId, transaction }) => {
+    const where = {
+        slot_parent_id: slotParentId,
+        date,
+        heure_debut: { [Op.lt]: endTime },
+        heure_fin: { [Op.gt]: startTime }
+    };
+
+    if (excludeId) {
+        where.id = { [Op.ne]: excludeId };
+    }
+
+    return IntervalSlot.findOne({ where, transaction });
+};
+
+const validateIntervalPlacement = async ({ slotParentId, date, startTime, endTime, excludeId, transaction }) => {
+    const parentSlot = await Slot.findByPk(slotParentId, { transaction });
+
+    if (!parentSlot) {
+        return { status: 404, message: 'Créneau principal non trouvé' };
+    }
+
+    if (String(parentSlot.date) !== date) {
+        return { status: 400, message: 'La date de l\'intervalle doit correspondre à celle du créneau principal' };
+    }
+
+    const parentStart = timeToMinutes(parentSlot.heure_debut);
+    const parentEnd = timeToMinutes(parentSlot.heure_fin);
+    const intervalStart = timeToMinutes(startTime);
+    const intervalEnd = timeToMinutes(endTime);
+
+    if (intervalStart < parentStart || intervalEnd > parentEnd) {
+        return { status: 400, message: 'L\'intervalle doit rester dans la plage horaire du créneau principal' };
+    }
+
+    const overlappingInterval = await findOverlappingInterval({
+        slotParentId,
+        date,
+        startTime,
+        endTime,
+        excludeId,
+        transaction
+    });
+
+    if (overlappingInterval) {
+        return { status: 400, message: 'Un autre intervalle existe déjà sur cette plage horaire' };
+    }
+
+    return { parentSlot };
+};
 
 // Créer un créneau principal manuellement
 exports.createSlot = async (req, res) => {
@@ -172,6 +231,91 @@ exports.getIntervalSlots = async (req, res) => {
     }
 };
 
+exports.createIntervalSlot = async (req, res) => {
+    const transaction = await sequelize.transaction();
+
+    try {
+        const slotParentId = Number(req.body.slot_parent_id || req.body.slotParentId);
+        const startTime = normalizeTime(req.body.heure_debut);
+        const endTime = normalizeTime(req.body.heure_fin);
+        const capacity = Number(req.body.capacite_max);
+
+        if (!Number.isInteger(slotParentId) || slotParentId < 1) {
+            await transaction.rollback();
+            return res.status(400).json({ message: 'Créneau principal invalide' });
+        }
+
+        const parentSlot = await Slot.findByPk(slotParentId, { transaction });
+        if (!parentSlot) {
+            await transaction.rollback();
+            return res.status(404).json({ message: 'Créneau principal non trouvé' });
+        }
+
+        const date = req.body.date || String(parentSlot.date);
+
+        if (!isValidDateOnly(date)) {
+            await transaction.rollback();
+            return res.status(400).json({ message: 'Date invalide. Format attendu: YYYY-MM-DD' });
+        }
+
+        if (!startTime || !endTime) {
+            await transaction.rollback();
+            return res.status(400).json({ message: 'Heure invalide. Format attendu: HH:mm ou HH:mm:ss' });
+        }
+
+        if (timeToMinutes(startTime) >= timeToMinutes(endTime)) {
+            await transaction.rollback();
+            return res.status(400).json({ message: 'L\'heure de fin doit être après l\'heure de début' });
+        }
+
+        if (!Number.isInteger(capacity) || capacity < 1) {
+            await transaction.rollback();
+            return res.status(400).json({ message: 'La capacité doit être un nombre entier supérieur à 0' });
+        }
+
+        const parsedIsActive = parseOptionalBoolean(req.body.isActive);
+        if (parsedIsActive === null) {
+            await transaction.rollback();
+            return res.status(400).json({ message: 'Le statut doit être un booléen' });
+        }
+
+        const placementValidation = await validateIntervalPlacement({
+            slotParentId,
+            date,
+            startTime,
+            endTime,
+            transaction
+        });
+
+        if (placementValidation.message) {
+            await transaction.rollback();
+            return res.status(placementValidation.status).json({ message: placementValidation.message });
+        }
+
+        const intervalSlot = await IntervalSlot.create({
+            date,
+            heure_debut: startTime,
+            heure_fin: endTime,
+            capacite_max: capacity,
+            places_restantes: capacity,
+            slot_parent_id: slotParentId,
+            isActive: parsedIsActive ?? true
+        }, { transaction });
+
+        const createdInterval = await IntervalSlot.findByPk(intervalSlot.id, {
+            include: [{ model: Slot, attributes: ['date', 'heure_debut', 'heure_fin'] }],
+            transaction
+        });
+
+        await transaction.commit();
+        res.status(201).json(createdInterval);
+    } catch (err) {
+        await transaction.rollback();
+        console.error('Erreur création interval slot:', err);
+        res.status(500).json({ message: 'Erreur création intervalle' });
+    }
+};
+
 exports.updateIntervalSlot = async (req, res) => {
     const transaction = await sequelize.transaction();
 
@@ -208,6 +352,20 @@ exports.updateIntervalSlot = async (req, res) => {
         if (req.body.heure_debut !== undefined) updates.heure_debut = nextStartTime;
         if (req.body.heure_fin !== undefined) updates.heure_fin = nextEndTime;
 
+        const placementValidation = await validateIntervalPlacement({
+            slotParentId: intervalSlot.slot_parent_id,
+            date: nextDate,
+            startTime: nextStartTime,
+            endTime: nextEndTime,
+            excludeId: id,
+            transaction
+        });
+
+        if (placementValidation.message) {
+            await transaction.rollback();
+            return res.status(placementValidation.status).json({ message: placementValidation.message });
+        }
+
         const reservedCount = await Appointment.count({
             where: activeAppointmentWhere(id),
             transaction
@@ -233,14 +391,13 @@ exports.updateIntervalSlot = async (req, res) => {
         }
 
         if (req.body.isActive !== undefined) {
-            if (typeof req.body.isActive === 'boolean') {
-                updates.isActive = req.body.isActive;
-            } else if (req.body.isActive === 'true' || req.body.isActive === 'false') {
-                updates.isActive = req.body.isActive === 'true';
-            } else {
+            const parsedIsActive = parseOptionalBoolean(req.body.isActive);
+            if (parsedIsActive === null) {
                 await transaction.rollback();
                 return res.status(400).json({ message: 'Le statut doit être un booléen' });
             }
+
+            updates.isActive = parsedIsActive;
         }
 
         await intervalSlot.update(updates, { transaction });

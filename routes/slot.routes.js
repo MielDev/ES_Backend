@@ -15,6 +15,9 @@ router.get('/', auth, slotCtrl.getSlots);
 // Lister les créneaux disponibles pour les étudiants
 router.get('/intervals', auth, slotCtrl.getIntervalSlots);
 
+// Ajouter un intervalle généré manuellement
+router.post('/intervals', auth, isAdmin, slotCtrl.createIntervalSlot);
+
 // Mettre à jour un intervalle généré
 router.put('/intervals/:id', auth, isAdmin, slotCtrl.updateIntervalSlot);
 
