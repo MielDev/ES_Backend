@@ -1,4 +1,36 @@
-const { Slot, AdminConfig, IntervalSlot } = require('../models');
+const { Op } = require('sequelize');
+const { sequelize, Slot, IntervalSlot, Appointment } = require('../models');
+
+const CANCELLED_APPOINTMENT_STATUSES = ['annule', 'annul\u00e9'];
+
+const normalizeTime = (time) => {
+    if (typeof time !== 'string') return null;
+
+    const match = time.match(/^([01]\d|2[0-3]):([0-5]\d)(?::([0-5]\d))?$/);
+    if (!match) return null;
+
+    return `${match[1]}:${match[2]}:${match[3] || '00'}`;
+};
+
+const timeToMinutes = (time) => {
+    const normalizedTime = normalizeTime(time);
+    if (!normalizedTime) return null;
+
+    const [hours, minutes] = normalizedTime.split(':').map(Number);
+    return hours * 60 + minutes;
+};
+
+const isValidDateOnly = (date) => {
+    if (typeof date !== 'string' || !/^\d{4}-\d{2}-\d{2}$/.test(date)) return false;
+
+    const parsedDate = new Date(`${date}T00:00:00.000Z`);
+    return !Number.isNaN(parsedDate.getTime()) && parsedDate.toISOString().startsWith(date);
+};
+
+const activeAppointmentWhere = (intervalSlotId) => ({
+    intervalSlotId,
+    status: { [Op.notIn]: CANCELLED_APPOINTMENT_STATUSES }
+});
 
 // Créer un créneau principal manuellement
 exports.createSlot = async (req, res) => {
@@ -119,8 +151,9 @@ exports.getSlots = async (req, res) => {
 // Lister les créneaux disponibles pour les étudiants
 exports.getIntervalSlots = async (req, res) => {
     try {
-        const { date } = req.query;
-        const whereClause = { isActive: true };
+        const { date, includeInactive } = req.query;
+        const canSeeInactive = includeInactive === 'true' && ['admin', 'administrateur'].includes(req.user?.role);
+        const whereClause = canSeeInactive ? {} : { isActive: true };
 
         if (date) {
             whereClause.date = date;
@@ -136,6 +169,138 @@ exports.getIntervalSlots = async (req, res) => {
     } catch (err) {
         console.error(err);
         res.status(500).json({ message: 'Erreur récupération créneaux' });
+    }
+};
+
+exports.updateIntervalSlot = async (req, res) => {
+    const transaction = await sequelize.transaction();
+
+    try {
+        const { id } = req.params;
+        const intervalSlot = await IntervalSlot.findByPk(id, { transaction });
+
+        if (!intervalSlot) {
+            await transaction.rollback();
+            return res.status(404).json({ message: 'Intervalle non trouvé' });
+        }
+
+        const updates = {};
+        const nextDate = req.body.date !== undefined ? req.body.date : intervalSlot.date;
+        const nextStartTime = req.body.heure_debut !== undefined ? normalizeTime(req.body.heure_debut) : intervalSlot.heure_debut;
+        const nextEndTime = req.body.heure_fin !== undefined ? normalizeTime(req.body.heure_fin) : intervalSlot.heure_fin;
+
+        if (!isValidDateOnly(nextDate)) {
+            await transaction.rollback();
+            return res.status(400).json({ message: 'Date invalide. Format attendu: YYYY-MM-DD' });
+        }
+
+        if (!nextStartTime || !nextEndTime) {
+            await transaction.rollback();
+            return res.status(400).json({ message: 'Heure invalide. Format attendu: HH:mm ou HH:mm:ss' });
+        }
+
+        if (timeToMinutes(nextStartTime) >= timeToMinutes(nextEndTime)) {
+            await transaction.rollback();
+            return res.status(400).json({ message: 'L\'heure de fin doit être après l\'heure de début' });
+        }
+
+        if (req.body.date !== undefined) updates.date = nextDate;
+        if (req.body.heure_debut !== undefined) updates.heure_debut = nextStartTime;
+        if (req.body.heure_fin !== undefined) updates.heure_fin = nextEndTime;
+
+        const reservedCount = await Appointment.count({
+            where: activeAppointmentWhere(id),
+            transaction
+        });
+
+        if (req.body.capacite_max !== undefined) {
+            const capacity = Number(req.body.capacite_max);
+
+            if (!Number.isInteger(capacity) || capacity < 1) {
+                await transaction.rollback();
+                return res.status(400).json({ message: 'La capacité doit être un nombre entier supérieur à 0' });
+            }
+
+            if (capacity < reservedCount) {
+                await transaction.rollback();
+                return res.status(400).json({
+                    message: `La capacité ne peut pas être inférieure aux ${reservedCount} réservation(s) existante(s)`
+                });
+            }
+
+            updates.capacite_max = capacity;
+            updates.places_restantes = capacity - reservedCount;
+        }
+
+        if (req.body.isActive !== undefined) {
+            if (typeof req.body.isActive === 'boolean') {
+                updates.isActive = req.body.isActive;
+            } else if (req.body.isActive === 'true' || req.body.isActive === 'false') {
+                updates.isActive = req.body.isActive === 'true';
+            } else {
+                await transaction.rollback();
+                return res.status(400).json({ message: 'Le statut doit être un booléen' });
+            }
+        }
+
+        await intervalSlot.update(updates, { transaction });
+
+        if (updates.date || updates.heure_debut || updates.heure_fin) {
+            await Appointment.update(
+                {
+                    date_rdv: intervalSlot.date,
+                    heure_debut: intervalSlot.heure_debut,
+                    heure_fin: intervalSlot.heure_fin
+                },
+                {
+                    where: activeAppointmentWhere(id),
+                    transaction
+                }
+            );
+        }
+
+        const updatedInterval = await IntervalSlot.findByPk(id, {
+            include: [{ model: Slot, attributes: ['date', 'heure_debut', 'heure_fin'] }],
+            transaction
+        });
+
+        await transaction.commit();
+        res.json(updatedInterval);
+    } catch (err) {
+        await transaction.rollback();
+        console.error('Erreur update interval slot:', err);
+        res.status(500).json({ message: 'Erreur update intervalle' });
+    }
+};
+
+exports.deleteIntervalSlot = async (req, res) => {
+    const transaction = await sequelize.transaction();
+
+    try {
+        const { id } = req.params;
+        const intervalSlot = await IntervalSlot.findByPk(id, { transaction });
+
+        if (!intervalSlot) {
+            await transaction.rollback();
+            return res.status(404).json({ message: 'Intervalle non trouvé' });
+        }
+
+        const appointmentsDeleted = await Appointment.destroy({
+            where: { intervalSlotId: id },
+            transaction
+        });
+
+        await intervalSlot.destroy({ transaction });
+        await transaction.commit();
+
+        res.json({
+            message: 'Intervalle supprimé',
+            appointmentsDeleted
+        });
+    } catch (err) {
+        await transaction.rollback();
+        console.error('Erreur suppression interval slot:', err);
+        res.status(500).json({ message: 'Erreur suppression intervalle' });
     }
 };
 

@@ -15,6 +15,12 @@ router.get('/', auth, slotCtrl.getSlots);
 // Lister les créneaux disponibles pour les étudiants
 router.get('/intervals', auth, slotCtrl.getIntervalSlots);
 
+// Mettre à jour un intervalle généré
+router.put('/intervals/:id', auth, isAdmin, slotCtrl.updateIntervalSlot);
+
+// Supprimer un intervalle généré
+router.delete('/intervals/:id', auth, isAdmin, slotCtrl.deleteIntervalSlot);
+
 // Mettre à jour un créneau principal
 router.put('/:id', auth, isAdmin, slotCtrl.updateSlot);
 
